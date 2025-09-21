@@ -36,86 +36,101 @@ impl Display for FilterErrorMessage {
     }
 }
 
+/// Returns `Err()` with custom message from FilterErrorMessage
+///
+/// If the parsing works it will `continue`
+///
+/// # FilterErrorMessage::{Filter}(DesiredType::{Type})
+///
+/// # Example
+///
+/// let input = String::from("Test")
+///
+/// check_type!(input, String, Err(FilterErrorMessage::NotString(DesiredType::String))),
+#[macro_export]
+macro_rules! check_type {
+    ($input:expr, $t:ty, $err:expr) => {
+        match $input.parse::<$t>() {
+            Ok(_) => continue,
+            Err(_) => return $err,
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! match_sanatize {
+    ( $input:expr, $sanatize:expr ) => {
+        match $sanatize {
+            DesiredType::String => check_type!(
+                $input,
+                String,
+                Err(FilterErrorMessage::NotString(DesiredType::String))
+            ),
+            DesiredType::Bool => check_type!(
+                $input,
+                bool,
+                Err(FilterErrorMessage::NotBool(DesiredType::Bool))
+            ),
+            DesiredType::U8 => check_type!(
+                $input,
+                u8,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U8))
+            ),
+            DesiredType::U16 => check_type!(
+                $input,
+                u16,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U16))
+            ),
+            DesiredType::U32 => check_type!(
+                $input,
+                u32,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U32))
+            ),
+            DesiredType::U64 => check_type!(
+                $input,
+                u64,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U64))
+            ),
+            DesiredType::U128 => check_type!(
+                $input,
+                u128,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U128))
+            ),
+            DesiredType::I8 => check_type!(
+                $input,
+                i8,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I8))
+            ),
+            DesiredType::I16 => check_type!(
+                $input,
+                i16,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I16))
+            ),
+            DesiredType::I32 => check_type!(
+                $input,
+                i32,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I32))
+            ),
+            DesiredType::I64 => check_type!(
+                $input,
+                i64,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I64))
+            ),
+            DesiredType::I128 => check_type!(
+                $input,
+                i128,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I128))
+            ),
+        }
+    };
+}
 impl Sanatize {
     fn execute(answer: String, filters: &Vec<Sanatize>) -> Result<String, FilterErrorMessage> {
         let clean_answer = answer.trim();
 
         for filter in filters {
             match filter {
-                Sanatize::IsType(t) => match t {
-                    DesiredType::String => match clean_answer.parse::<String>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotString(DesiredType::String)),
-                    },
-                    DesiredType::Bool => match clean_answer.parse::<bool>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotBool(DesiredType::Bool)),
-                    },
-                    DesiredType::U8 => match clean_answer.parse::<u8>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::U8)),
-                    },
-                    DesiredType::U16 => match clean_answer.parse::<u16>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::U16)),
-                    },
-                    DesiredType::U32 => match clean_answer.parse::<u32>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::U32)),
-                    },
-                    DesiredType::U64 => match clean_answer.parse::<u64>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::U64)),
-                    },
-                    DesiredType::U128 => match clean_answer.parse::<u128>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::U128)),
-                    },
-                    DesiredType::I8 => match clean_answer.parse::<i8>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::I8)),
-                    },
-                    DesiredType::I16 => match clean_answer.parse::<i16>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::I16)),
-                    },
-                    DesiredType::I32 => match clean_answer.parse::<i32>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::I32)),
-                    },
-                    DesiredType::I64 => match clean_answer.parse::<i64>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::I64)),
-                    },
-                    DesiredType::I128 => match clean_answer.parse::<i128>() {
-                        Ok(_) => {
-                            continue;
-                        }
-                        Err(_) => return Err(FilterErrorMessage::NotNumber(DesiredType::I128)),
-                    },
-                },
+                Sanatize::IsType(t) => match_sanatize!(clean_answer, t),
                 Sanatize::MatchString(s) => {
                     if clean_answer == s {
                         continue;
@@ -124,21 +139,10 @@ impl Sanatize {
                     }
                 }
                 Sanatize::MatchStrings(vector) => {
-                    let mut found_match = false;
-
-                    for word in vector {
-                        if clean_answer == word {
-                            found_match = true;
-                            break;
-                        } else {
-                            continue;
-                        }
-                    }
-
-                    if found_match == false {
-                        return Err(FilterErrorMessage::NotMatchStrings());
-                    } else {
+                    if vector.contains(&clean_answer.to_string()) {
                         continue;
+                    } else {
+                        return Err(FilterErrorMessage::NotMatchStrings());
                     }
                 }
             };
