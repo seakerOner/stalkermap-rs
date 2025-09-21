@@ -35,4 +35,19 @@ fn main() {
     );
 
     println!("The input: {}", url_input.answer);
+
+    let url_input2 = Terminal::ask(
+        "You like Rust? Y/N ",
+        vec![
+            Sanatize::IsType(DesiredType::String),
+            Sanatize::MatchStrings(vec![
+                String::from("Y"),
+                String::from("N"),
+                String::from("y"),
+                String::from("n"),
+            ]),
+        ],
+    );
+
+    println!("The input: {}", url_input2.answer);
 }
