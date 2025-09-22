@@ -1,4 +1,4 @@
-use stalkermap_rs::utils::{DesiredType, Sanatize, Terminal};
+use stalkermap_core::utils::{DesiredType, Sanatize, Terminal};
 
 fn main() {
     println!(
@@ -30,24 +30,9 @@ fn main() {
     );
 
     let url_input = Terminal::ask(
-        "You like Rust? (true/ false) ",
-        vec![Sanatize::IsType(DesiredType::Bool)],
+        "Input the target's url: ",
+        vec![Sanatize::IsType(DesiredType::String)],
     );
 
     println!("The input: {}", url_input.answer);
-
-    let url_input2 = Terminal::ask(
-        "You like Rust? Y/N ",
-        vec![
-            Sanatize::IsType(DesiredType::String),
-            Sanatize::MatchStrings(vec![
-                String::from("Y"),
-                String::from("N"),
-                String::from("y"),
-                String::from("n"),
-            ]),
-        ],
-    );
-
-    println!("The input: {}", url_input2.answer);
 }

@@ -11,12 +11,21 @@ pub enum Sanatize {
     IsType(DesiredType),
 }
 
+/// Trait for input validation.  
+/// Any type that implements this can validate a string input and return
+/// either `Ok(())` if the input is valid or a [`FilterErrorMessage`] on failure.
+trait Validate {
+    fn validate(&self, input: &str) -> Result<(), FilterErrorMessage>;
+}
+
 /// Represents an error that occurs when input validation fails.
 ///
-/// Each variant describes a specific reason why the input was rejected:
-/// - Not a valid number, string, or boolean.
-/// - Did not match a required single string.
-/// - Did not match any of a set of allowed strings.
+/// Each variant describes why the input was rejected:
+/// - [`NotNumber`]: could not parse as the expected numeric type.
+/// - [`NotString`]: could not parse as string.
+/// - [`NotBool`]: could not parse as boolean.
+/// - [`NotMatchString`]: did not match the required string.
+/// - [`NotMatchStrings`]: did not match any of the given options.
 enum FilterErrorMessage {
     NotNumber(DesiredType),
     NotString(DesiredType),
@@ -47,30 +56,26 @@ impl Display for FilterErrorMessage {
     }
 }
 
-/// Validates that an input string can be parsed into the given type.
-///
-/// If parsing succeeds, the loop continues.  
-/// If parsing fails, the provided error expression is returned.
+/// Macro helper that validates if an input string can be parsed into the given Rust type.  
+/// Expands into a `Result<(), FilterErrorMessage>`.
 ///
 /// # Parameters
-/// - `$input`: The input string to parse (usually trimmed user input).
-/// - `$t`: The Rust type to parse into (e.g. `u8`, `i32`, `bool`).
-/// - `$err`: The error expression to return when parsing fails.
+/// - `$input`: The input string to parse.
+/// - `$t`: The Rust type (e.g. `u8`, `i32`, `bool`).
+/// - `$err`: The error to return if parsing fails.
 ///
 /// # Example
 /// ```rust,ignore
-/// let input = String::from("42");
-/// check_type!(
-///     input,
-///     u8,
-///     Err(FilterErrorMessage::NotNumber(DesiredType::U8))
-/// );
+///
+/// let input = "42";
+/// check_type!(input, u8, Err(FilterErrorMessage::NotNumber(DesiredType::U8)));
 /// ```
-#[macro_export]
+
+/// #[doc(hidden)]
 macro_rules! check_type {
     ($input:expr, $t:ty, $err:expr) => {
         match $input.parse::<$t>() {
-            Ok(_) => continue,
+            Ok(_) => Ok(()),
             Err(_) => return $err,
         }
     };
@@ -78,24 +83,20 @@ macro_rules! check_type {
 
 /// Matches a [`DesiredType`] variant and applies the corresponding [`check_type!`] validation.
 ///
-/// This macro expands into a `match` block that checks the input against
-/// all supported [`DesiredType`] variants (`String`, `Bool`, integers).
-///
-/// # Parameters
-/// - `$input`: The input string to validate.
-/// - `$sanatize`: A [`DesiredType`] enum variant.
+/// Expands into a `match` that checks the input string against
+/// all supported [`DesiredType`] variants (string, bool, integers).
 ///
 /// # Example
 /// ```rust,ignore
-/// let input = String::from("true");
+/// use stalkermap_core::utils::DesiredType;
+///
+/// let input = "true";
 /// let desired = DesiredType::Bool;
 ///
-/// match_sanatize!(
-///     input,
-///     desired
-/// ); // succeeds if input parses as bool, otherwise returns an error
+/// match_sanatize!(input, desired)?; // succeeds if input parses as bool
 /// ```
-#[macro_export]
+
+/// #[doc(hidden)]
 macro_rules! match_sanatize {
     ( $input:expr, $sanatize:expr ) => {
         match $sanatize {
@@ -163,29 +164,43 @@ macro_rules! match_sanatize {
     };
 }
 impl Sanatize {
+    /// Executes all provided filters against the given answer.
+    ///
+    /// - Trims whitespace before validation.
+    /// - Stops and returns the first error encountered.
+    /// - Returns the cleaned string if all filters pass.
     fn execute(answer: String, filters: &Vec<Sanatize>) -> Result<String, FilterErrorMessage> {
         let clean_answer = answer.trim();
 
         for filter in filters {
-            match filter {
-                Sanatize::IsType(t) => match_sanatize!(clean_answer, t),
-                Sanatize::MatchString(s) => {
-                    if clean_answer == s {
-                        continue;
-                    } else {
-                        return Err(FilterErrorMessage::NotMatchString(s.to_string()));
-                    }
-                }
-                Sanatize::MatchStrings(vector) => {
-                    if vector.contains(&clean_answer.to_string()) {
-                        continue;
-                    } else {
-                        return Err(FilterErrorMessage::NotMatchStrings());
-                    }
-                }
-            };
+            match filter.validate(clean_answer) {
+                Ok(_) => continue,
+                Err(e) => return Err(e),
+            }
         }
         Ok(clean_answer.to_string())
+    }
+}
+
+impl Validate for Sanatize {
+    fn validate(&self, input: &str) -> Result<(), FilterErrorMessage> {
+        match self {
+            Sanatize::IsType(t) => match_sanatize!(input, t),
+            Sanatize::MatchString(s) => {
+                if input == s {
+                    Ok(())
+                } else {
+                    Err(FilterErrorMessage::NotMatchString(s.to_string()))
+                }
+            }
+            Sanatize::MatchStrings(options) => {
+                if options.contains(&input.to_string()) {
+                    Ok(())
+                } else {
+                    Err(FilterErrorMessage::NotMatchStrings())
+                }
+            }
+        }
     }
 }
 
@@ -232,27 +247,29 @@ impl Display for DesiredType {
     }
 }
 
-/// A helper for repeatedly asking the user for input until it passes all [`Sanatize`] filters.
+/// A helper for repeatedly asking the user for input until it passes all [`Sanatize`] filters.  
+/// Internally calls [`Sanatize::execute`].
 ///
 /// # Examples
 ///
 /// ## Example 1: Boolean input
 /// ```rust,no_run
-/// use stalkermap_core::{Terminal, Sanatize, DesiredType};
+/// use stalkermap_core::utils::{DesiredType, Sanatize, Terminal};
 ///
-/// let url_input = Terminal::ask(
+///
+/// let input = Terminal::ask(
 ///     "You like Rust? (true/false)",
 ///     vec![Sanatize::IsType(DesiredType::Bool)],
 /// );
 ///
-/// println!("The input: {}", url_input.answer);
+/// println!("The input: {}", input.answer);
 /// ```
 ///
 /// ## Example 2: Restricted string input
 /// ```rust,no_run
-/// use stalkermap_core::{Terminal, Sanatize, DesiredType};
+/// use stalkermap_core::utils::{DesiredType, Sanatize, Terminal};
 ///
-/// let url_input2 = Terminal::ask(
+/// let input2 = Terminal::ask(
 ///     "You like Rust? Y/N",
 ///     vec![
 ///         Sanatize::IsType(DesiredType::String),
@@ -265,42 +282,15 @@ impl Display for DesiredType {
 ///     ],
 /// );
 ///
-/// println!("The input: {}", url_input2.answer);
+/// println!("The input: {}", input2.answer);
 /// ```
 pub struct Terminal {
     pub answer: String,
 }
 
 impl Terminal {
-    /// Print a question to the terminal and loops it until it gets the desired answer with
-    ///  
-    ///  # Example 1
-    ///
-    ///  ```
-    ///  let url_input = Terminal::ask("You like Rust? (true/ false) ", vec![Sanatize::IsType(DesiredType::Bool)],);
-    ///
-    ///  println!("The input: {}", url_input.answer);
-    ///  ```
-    ///  
-    ///  # Example 2
-    ///
-    ///  ```
-    ///   let url_input2 = Terminal::ask(
-    ///    "You like Rust? Y/N ",
-    ///    vec![
-    ///        Sanatize::IsType(DesiredType::String),
-    ///        Sanatize::MatchStrings(vec![
-    ///            String::from("Y"),
-    ///            String::from("N"),
-    ///            String::from("y"),
-    ///            String::from("n"),
-    ///        ]),
-    ///      ],
-    ///   );
-    ///
-    ///   println!("The input: {}", url_input2.answer);
-    ///  ```
-
+    /// Prints a question to the terminal and loops until a valid answer is received.  
+    /// Returns a [`Terminal`] struct containing the accepted answer.
     pub fn ask(question: &str, filters: Vec<Sanatize>) -> Terminal {
         let answer: String = loop {
             println!("{}", question);
@@ -326,5 +316,110 @@ impl Terminal {
         };
 
         Terminal { answer: answer }
+    }
+}
+
+pub struct UrlCompose {
+    scheme: Scheme,
+    target: String,
+    target_type: TargetType,
+    port: u16,
+    full_url: String,
+}
+
+enum Scheme {
+    Http,
+    Https,
+}
+
+enum TargetType {
+    Dns,
+    IPv4,
+    IPv6,
+}
+
+enum UrlComposeErrors {
+    UrlEmpty,
+    InvalidSize,
+    InvalidScheme,
+    InvalidSchemeSintax,
+    InvalidPort,
+}
+
+impl Display for UrlComposeErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UrlEmpty => {
+                write!(f, "The url is empty")
+            }
+            Self::InvalidSize => {
+                write!(f, "Invalid size!")
+            }
+            Self::InvalidScheme => {
+                write!(f, "Invalid scheme => http or https")
+            }
+            Self::InvalidSchemeSintax => {
+                write!(f, "Invalid scheme sintax => http:// or https://")
+            }
+            Self::InvalidPort => {
+                write!(f, "Invalid port => (1 -> 65,535)")
+            }
+        }
+    }
+}
+
+impl UrlCompose {
+    pub fn new(input_url: Terminal) -> Result<UrlCompose, UrlComposeErrors> {
+        let char_url = input_url.answer;
+        let mut target: String = String::new();
+        let mut target_type: TargetType;
+        let mut port: u16;
+        let mut full_url: String;
+
+        if char_url.is_empty() {
+            return Err(UrlComposeErrors::UrlEmpty);
+        }
+
+        if char_url.get(..7).ok_or(UrlComposeErrors::InvalidSize)? != "http://"
+            && char_url.get(..8).ok_or(UrlComposeErrors::InvalidSize)? != "https://"
+        {
+            return Err(UrlComposeErrors::InvalidSchemeSintax);
+        }
+
+        let scheme = match Sanatize::execute(
+            char_url
+                .get(..4)
+                .ok_or(UrlComposeErrors::InvalidSize)?
+                .to_string(),
+            &vec![
+                Sanatize::IsType(DesiredType::String),
+                Sanatize::MatchString(String::from("http")),
+            ],
+        ) {
+            Ok(_) => Scheme::Http,
+            Err(_e) => {
+                match Sanatize::execute(
+                    char_url
+                        .get(..5)
+                        .ok_or(UrlComposeErrors::InvalidSize)?
+                        .to_string(),
+                    &vec![
+                        Sanatize::IsType(DesiredType::String),
+                        Sanatize::MatchString(String::from("https")),
+                    ],
+                ) {
+                    Ok(_) => Scheme::Https,
+                    Err(_) => return Err(UrlComposeErrors::InvalidScheme),
+                }
+            }
+        };
+
+        Ok(UrlCompose {
+            scheme,
+            target,
+            target_type,
+            port,
+            full_url,
+        })
     }
 }

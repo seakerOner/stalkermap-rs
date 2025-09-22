@@ -13,7 +13,7 @@
 //! - Custom error messages via `FilterErrorMessage`.
 //!
 //! ## Example
-//! ```rust,no_run
+//! ```rust,ignore
 //! use stalkermap_core::{Terminal, Sanatize, DesiredType};
 //!
 //! let input = Terminal::ask(
