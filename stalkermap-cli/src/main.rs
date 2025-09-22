@@ -1,4 +1,7 @@
-use stalkermap_core::utils::{DesiredType, Sanatize, Terminal};
+//use stalkermap_core::utils::sanitize::{DesiredType, Sanitize};
+//use stalkermap_core::utils::terminal::Terminal;
+//use stalkermap_core::utils::url;
+use stalkermap_core::utils::*;
 
 fn main() {
     println!(
@@ -31,7 +34,7 @@ fn main() {
 
     let url_input = Terminal::ask(
         "Input the target's url: ",
-        vec![Sanatize::IsType(DesiredType::String)],
+        vec![Sanitize::IsType(DesiredType::String)],
     );
 
     println!("The input: {}", url_input.answer);
