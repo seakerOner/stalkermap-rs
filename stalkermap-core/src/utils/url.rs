@@ -1,5 +1,6 @@
 use crate::utils::sanitize::{DesiredType, Sanitize};
 use crate::utils::terminal::Terminal;
+use std::str::FromStr;
 use std::{
     error::Error,
     fmt::Display,
@@ -26,9 +27,47 @@ pub enum TargetType {
 }
 
 impl TargetType {
-    pub fn is_dns(target: &str) -> Result<TargetType, ()> {}
-    pub fn is_ipv4(target: &str) -> Result<TargetType, ()> {}
-    pub fn is_ipv6(target: &String) -> Result<TargetType, ()> {}
+    pub fn is_dns(target: &str) -> Result<TargetType, UrlParserErrors> {
+        if target.len() > 253 {
+            return Err(UrlParserErrors::InvalidTargetType);
+        }
+
+        let valid: bool = target.split('.').all(|label| {
+            if label.is_empty() || label.len() > 63 {
+                return false;
+            }
+
+            if label.starts_with('-') || label.ends_with('-') {
+                return false;
+            }
+
+            if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                return false;
+            }
+
+            true
+        });
+
+        if valid {
+            Ok(TargetType::Dns)
+        } else {
+            Err(UrlParserErrors::InvalidTargetType)
+        }
+    }
+
+    pub fn is_ipv4(target: &str) -> Result<TargetType, UrlParserErrors> {
+        match Ipv4Addr::from_str(target) {
+            Ok(_) => Ok(TargetType::IPv4),
+            Err(_) => Err(UrlParserErrors::InvalidTargetType),
+        }
+    }
+
+    pub fn is_ipv6(target: &str) -> Result<TargetType, UrlParserErrors> {
+        match Ipv6Addr::from_str(target) {
+            Ok(_) => Ok(TargetType::IPv6),
+            Err(_) => Err(UrlParserErrors::InvalidTargetType),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -37,7 +76,7 @@ enum UrlParserErrors {
     InvalidSize,
     InvalidScheme,
     InvalidTargetType,
-    InvalidSchemeSintax,
+    InvalidSchemeSyntax,
     InvalidPort,
 }
 
@@ -56,7 +95,7 @@ impl Display for UrlParserErrors {
             Self::InvalidTargetType => {
                 write!(f, "Invalid target type => Must be a DNS or IPV4 OR IPV6")
             }
-            Self::InvalidSchemeSintax => {
+            Self::InvalidSchemeSyntax => {
                 write!(f, "Invalid scheme sintax => http:// or https://")
             }
             Self::InvalidPort => {
@@ -91,7 +130,7 @@ impl UrlParser {
         if subslice!(char_url, ..7, UrlParserErrors::InvalidSize) != "http://"
             && subslice!(char_url, ..8, UrlParserErrors::InvalidSize) != "https://"
         {
-            return Err(UrlParserErrors::InvalidSchemeSintax);
+            return Err(UrlParserErrors::InvalidSchemeSyntax);
         }
 
         let scheme = match Sanitize::execute(
@@ -118,18 +157,28 @@ impl UrlParser {
 
         let target: String = {
             match scheme {
-                Scheme::Http => Some(char_url.chars().skip(7).take_while(|c| *c != ':').collect())
-                    .ok_or(UrlParserErrors::InvalidSize)?,
-                Scheme::Https => Some(char_url.chars().skip(8).take_while(|c| *c != ':').collect())
-                    .ok_or(UrlParserErrors::InvalidSize)?,
+                Scheme::Http => Some(
+                    char_url
+                        .chars()
+                        .skip(7)
+                        .take_while(|c| *c != ':' || *c != '/')
+                        .collect(),
+                )
+                .ok_or(UrlParserErrors::InvalidSize)?,
+                Scheme::Https => Some(
+                    char_url
+                        .chars()
+                        .skip(8)
+                        .take_while(|c| *c != ':' || *c != '/')
+                        .collect(),
+                )
+                .ok_or(UrlParserErrors::InvalidSize)?,
             }
         };
 
-        let target_type: TargetType = Some(
-            TargetType::is_ipv4(&target)
-                .or(TargetType::is_ipv6(&target).or(TargetType::is_dns(&target))),
-        )
-        .ok_or(UrlParserErrors::InvalidTargetType)??;
+        let target_type: TargetType = TargetType::is_ipv4(&target)
+            .or(TargetType::is_ipv6(&target))
+            .or(TargetType::is_dns(&target))?;
 
         let mut port: u16;
         let mut full_url: String;

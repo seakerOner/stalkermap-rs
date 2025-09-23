@@ -2,7 +2,6 @@
 //use stalkermap_core::utils::terminal::Terminal;
 //use stalkermap_core::utils::url;
 use stalkermap_core::utils::*;
-
 fn main() {
     println!(
         "------------------------------------------------------------------------------------",
