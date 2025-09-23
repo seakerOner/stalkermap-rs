@@ -1,3 +1,15 @@
+//! # UrlParser
+//!
+//! A minimal and safe URL parser in Rust.
+//!
+//! **Features:**
+//! - Supports `http` and `https` schemes
+//! - Host validation (`DNS`, `IPv4`, `IPv6`)
+//! - Custom error enum for precise error handling
+//! - No external dependencies
+//!
+//! ## Example
+
 use crate::utils::sanitize::{DesiredType, Sanitize};
 use crate::utils::terminal::Terminal;
 use std::str::FromStr;
@@ -7,6 +19,13 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr},
 };
 
+/// Represents a parsed URL.
+///
+/// Contains information about:
+/// - [`Scheme`] (`http` or `https`)
+/// - [`TargetType`] (DNS, IPv4, IPv6)
+/// - Associated port
+/// - Full normalized URL
 pub struct UrlParser {
     scheme: Scheme,
     target: String,
@@ -15,11 +34,18 @@ pub struct UrlParser {
     full_url: String,
 }
 
-enum Scheme {
+/// Represents the scheme of a URL (`http` or `https`).
+pub enum Scheme {
     Http,
     Https,
 }
 
+/// Represents the type of the host/target.
+///
+/// Can be:
+/// - `Dns`
+/// - `IPv4`
+/// - `IPv6`
 pub enum TargetType {
     Dns,
     IPv4,
@@ -27,6 +53,13 @@ pub enum TargetType {
 }
 
 impl TargetType {
+    /// Checks if the provided string is a valid DNS.
+    ///
+    /// # Rules
+    /// - Maximum length: 253 characters
+    /// - Each label ≤ 63 characters
+    /// - Cannot start or end with `-`
+    /// - Only ASCII alphanumeric characters and `-` allowed
     pub fn is_dns(target: &str) -> Result<TargetType, UrlParserErrors> {
         if target.len() > 253 {
             return Err(UrlParserErrors::InvalidTargetType);
@@ -55,6 +88,7 @@ impl TargetType {
         }
     }
 
+    /// Checks if the provided string is a valid IPv4 address.
     pub fn is_ipv4(target: &str) -> Result<TargetType, UrlParserErrors> {
         match Ipv4Addr::from_str(target) {
             Ok(_) => Ok(TargetType::IPv4),
@@ -62,6 +96,7 @@ impl TargetType {
         }
     }
 
+    /// Checks if the provided string is a valid IPv6 address.
     pub fn is_ipv6(target: &str) -> Result<TargetType, UrlParserErrors> {
         match Ipv6Addr::from_str(target) {
             Ok(_) => Ok(TargetType::IPv6),
@@ -70,8 +105,9 @@ impl TargetType {
     }
 }
 
+/// Represents possible errors when parsing a URL.
 #[derive(Debug)]
-enum UrlParserErrors {
+pub enum UrlParserErrors {
     UrlEmpty,
     InvalidSize,
     InvalidScheme,
@@ -113,13 +149,34 @@ impl From<()> for UrlParserErrors {
     }
 }
 
+/// Helper macro to safely slice a string with error handling.
+///
+/// subslice!({input}, {range}, {ErrorMessage})
+///
+/// # Example
+/// ```rust,ignore
+/// let s = "https://example.com";
+/// let scheme = subslice!(s, ..5, UrlParserErrors::InvalidSize);
+/// ```
+
+#[macro_export]
 macro_rules! subslice {
-    ($v:expr, $slice:expr, $err:expr) => {
-        $v.get($slice).ok_or($err)?
+    ($s:expr, $slice:expr, $err:expr) => {
+        $s.get($slice).ok_or($err)?
     };
 }
 
 impl UrlParser {
+    /// Creates a new [`UrlParser`] from a `Terminal` input.
+    ///
+    /// # Errors
+    /// Returns [`UrlParserErrors`] if:
+    /// - The scheme is invalid
+    /// - The host is invalid
+    /// - The URL is empty
+    ///
+    /// # Example
+
     pub fn new(input_url: Terminal) -> Result<UrlParser, UrlParserErrors> {
         let char_url = input_url.answer;
 
@@ -157,22 +214,16 @@ impl UrlParser {
 
         let target: String = {
             match scheme {
-                Scheme::Http => Some(
-                    char_url
-                        .chars()
-                        .skip(7)
-                        .take_while(|c| *c != ':' || *c != '/')
-                        .collect(),
-                )
-                .ok_or(UrlParserErrors::InvalidSize)?,
-                Scheme::Https => Some(
-                    char_url
-                        .chars()
-                        .skip(8)
-                        .take_while(|c| *c != ':' || *c != '/')
-                        .collect(),
-                )
-                .ok_or(UrlParserErrors::InvalidSize)?,
+                Scheme::Http => char_url
+                    .chars()
+                    .skip(7)
+                    .take_while(|c| *c != ':' && *c != '/')
+                    .collect(),
+                Scheme::Https => char_url
+                    .chars()
+                    .skip(8)
+                    .take_while(|c| *c != ':' && *c != '/')
+                    .collect(),
             }
         };
 
@@ -180,8 +231,8 @@ impl UrlParser {
             .or(TargetType::is_ipv6(&target))
             .or(TargetType::is_dns(&target))?;
 
-        let mut port: u16;
-        let mut full_url: String;
+        let mut port: u16 = 19;
+        let mut full_url: String = String::from("ss");
 
         Ok(UrlParser {
             scheme,
