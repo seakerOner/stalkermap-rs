@@ -10,8 +10,6 @@
 //!
 //! ## Example
 
-use crate::utils::sanitize::{DesiredType, Sanitize};
-use crate::utils::terminal::Terminal;
 use std::str::FromStr;
 use std::{
     error::Error,
@@ -31,13 +29,33 @@ pub struct UrlParser {
     target: String,
     target_type: TargetType,
     port: u16,
+    subdirectory: String,
     full_url: String,
+}
+
+impl Display for UrlParser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Scheme:{}\nTarget:{}\nTarget type:{}\nPort:{}\nSub directory:{}\nFull url:{}",
+            self.scheme, self.target, self.target_type, self.port, self.subdirectory, self.full_url
+        )
+    }
 }
 
 /// Represents the scheme of a URL (`http` or `https`).
 pub enum Scheme {
     Http,
     Https,
+}
+
+impl Display for Scheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Http => write!(f, "http"),
+            Self::Https => write!(f, "https"),
+        }
+    }
 }
 
 /// Represents the type of the host/target.
@@ -50,6 +68,16 @@ pub enum TargetType {
     Dns,
     IPv4,
     IPv6,
+}
+
+impl Display for TargetType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dns => write!(f, "dns"),
+            Self::IPv4 => write!(f, "ipv4"),
+            Self::IPv6 => write!(f, "ipv6"),
+        }
+    }
 }
 
 impl TargetType {
@@ -177,49 +205,35 @@ impl UrlParser {
     ///
     /// # Example
 
-    pub fn new(input_url: Terminal) -> Result<UrlParser, UrlParserErrors> {
-        let char_url = input_url.answer;
+    pub fn new(input_url: &str) -> Result<UrlParser, UrlParserErrors> {
+        let url = input_url;
 
-        if char_url.is_empty() {
+        if url.is_empty() {
             return Err(UrlParserErrors::UrlEmpty);
         }
 
-        if subslice!(char_url, ..7, UrlParserErrors::InvalidSize) != "http://"
-            && subslice!(char_url, ..8, UrlParserErrors::InvalidSize) != "https://"
+        if subslice!(&url, ..7, UrlParserErrors::InvalidSize) != "http://"
+            && subslice!(&url, ..8, UrlParserErrors::InvalidSize) != "https://"
         {
             return Err(UrlParserErrors::InvalidSchemeSyntax);
         }
 
-        let scheme = match Sanitize::execute(
-            subslice!(char_url, ..4, UrlParserErrors::InvalidSize).to_string(),
-            &vec![
-                Sanitize::IsType(DesiredType::String),
-                Sanitize::MatchString(String::from("http")),
-            ],
-        ) {
-            Ok(_) => Scheme::Http,
-            Err(_e) => {
-                match Sanitize::execute(
-                    subslice!(char_url, ..5, UrlParserErrors::InvalidSize).to_string(),
-                    &vec![
-                        Sanitize::IsType(DesiredType::String),
-                        Sanitize::MatchString(String::from("https")),
-                    ],
-                ) {
-                    Ok(_) => Scheme::Https,
-                    Err(_) => return Err(UrlParserErrors::InvalidScheme),
-                }
-            }
+        let scheme = if url.starts_with("http://") {
+            Scheme::Http
+        } else if url.starts_with("https://") {
+            Scheme::Https
+        } else {
+            return Err(UrlParserErrors::InvalidScheme);
         };
 
         let target: String = {
             match scheme {
-                Scheme::Http => char_url
+                Scheme::Http => url
                     .chars()
                     .skip(7)
                     .take_while(|c| *c != ':' && *c != '/')
                     .collect(),
-                Scheme::Https => char_url
+                Scheme::Https => url
                     .chars()
                     .skip(8)
                     .take_while(|c| *c != ':' && *c != '/')
@@ -231,14 +245,72 @@ impl UrlParser {
             .or(TargetType::is_ipv6(&target))
             .or(TargetType::is_dns(&target))?;
 
-        let mut port: u16 = 19;
-        let mut full_url: String = String::from("ss");
+        let quant_to_skip = match scheme {
+            Scheme::Http => "http://".len() + target.len(),
+            Scheme::Https => "https://".len() + target.len(),
+        };
+
+        let port: u16 = {
+            if quant_to_skip >= url.len() {
+                0
+            } else {
+                if url
+                    .chars()
+                    .nth(quant_to_skip)
+                    .ok_or(UrlParserErrors::InvalidSize)?
+                    == ':'
+                {
+                    let string_port_temp: String = url
+                        .chars()
+                        .skip(quant_to_skip + 1)
+                        .take_while(|v| v.is_ascii_digit())
+                        .collect();
+
+                    let valid_port = match string_port_temp.parse::<u16>() {
+                        Ok(port) => port,
+                        Err(_) => return Err(UrlParserErrors::InvalidPort),
+                    };
+                    valid_port
+                } else {
+                    0
+                }
+            }
+        };
+
+        let subdirectory = {
+            let chars_to_skip = {
+                match scheme {
+                    Scheme::Http => "http://".len(),
+                    Scheme::Https => "https://".len(),
+                }
+            } + target.len()
+                + {
+                    match port {
+                        0 => 0,
+                        n => format!(":{}", n).len(),
+                    }
+                };
+            let subdirectory: String = url.chars().skip(chars_to_skip).collect();
+            subdirectory
+        };
+
+        let full_url = format!(
+            "{}://{}{}{}",
+            scheme,
+            target,
+            match port {
+                0 => String::new(),
+                n => format!(":{}", n),
+            },
+            subdirectory
+        );
 
         Ok(UrlParser {
             scheme,
             target,
             target_type,
             port,
+            subdirectory,
             full_url,
         })
     }

@@ -31,10 +31,15 @@ fn main() {
         "------------------------------------------------------------------------------------",
     );
 
-    let url_input = Terminal::ask(
-        "Input the target's url: ",
-        vec![Sanitize::IsType(DesiredType::String)],
-    );
-
-    println!("The input: {}", url_input.answer);
+    let url_input = loop {
+        let input = Terminal::ask(
+            "Input the target's url: ",
+            vec![Sanitize::IsType(DesiredType::String)],
+        );
+        match UrlParser::new(&input.answer) {
+            Ok(u) => break u,
+            Err(e) => eprintln!("{}", e),
+        }
+    };
+    println!("{}", url_input);
 }

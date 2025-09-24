@@ -17,7 +17,7 @@
 //! and a vector of validation filters (`Sanitize` variants).
 //!
 //! ### Example 1: Boolean input
-//! ```rust,no_run
+//! ```rust, no_run
 //! use stalkermap_core::utils::{DesiredType, Sanitize, Terminal};
 //!
 //! let input = Terminal::ask(
