@@ -26,6 +26,7 @@ trait Validate {
 /// - [`NotBool`]: could not parse as boolean.
 /// - [`NotMatchString`]: did not match the required string.
 /// - [`NotMatchStrings`]: did not match any of the given options.
+#[derive(Debug)]
 pub(crate) enum FilterErrorMessage {
     NotNumber(DesiredType),
     NotString(DesiredType),
@@ -98,8 +99,8 @@ macro_rules! check_type {
 
 /// #[doc(hidden)]
 macro_rules! match_sanitize {
-    ( $input:expr, $sanatize:expr ) => {
-        match $sanatize {
+    ( $input:expr, $sanitize:expr ) => {
+        match $sanitize {
             DesiredType::String => check_type!(
                 $input,
                 String,
@@ -216,6 +217,7 @@ impl Validate for Sanitize {
 /// - `Bool`
 /// - Unsigned integers: `U8`, `U16`, `U32`, `U64`, `U128`
 /// - Signed integers: `I8`, `I16`, `I32`, `I64`, `I128`
+#[derive(Debug)]
 pub enum DesiredType {
     String,
     Bool,
@@ -246,6 +248,125 @@ impl Display for DesiredType {
             Self::I32 => write!(f, "i32"),
             Self::I64 => write!(f, "i64"),
             Self::I128 => write!(f, "i128"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_match_string_sucess() {
+        let filter = Sanitize::MatchString("hello".to_string());
+        assert!(filter.validate("hello").is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_match_string_fail() {
+        let filter = Sanitize::MatchString("hello".to_string());
+        let res = filter.validate("world");
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(
+                format!("{}", e),
+                "The value doesn't match with hello, try again!"
+            );
+        }
+    }
+
+    #[test]
+    fn match_sanitize_match_strings_sucess() {
+        let filter = Sanitize::MatchStrings(vec!["A".to_string(), "B".to_string()]);
+        assert!(filter.validate("A").is_ok());
+        assert!(filter.validate("B").is_ok());
+    }
+
+    #[test]
+    fn test_sanitize_match_strings_fail() {
+        let filter = Sanitize::MatchStrings(vec!["A".to_string(), "B".to_string()]);
+        let res = filter.validate("C");
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(
+                format!("{}", e),
+                "The value doesn't match with the options, try again!"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sanitize_is_type_bool() {
+        let filter = Sanitize::IsType(DesiredType::Bool);
+        assert!(filter.validate("true").is_ok());
+        assert!(filter.validate("false").is_ok());
+        assert!(filter.validate("maybe").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_is_type_u8() {
+        let filter = Sanitize::IsType(DesiredType::U8);
+        assert!(filter.validate("42").is_ok());
+        assert!(filter.validate("-42").is_err());
+        assert!(filter.validate("256").is_err()); // u8 max is 255
+        assert!(filter.validate("abc").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_is_type_i32() {
+        let filter = Sanitize::IsType(DesiredType::I32);
+        assert!(filter.validate("-123").is_ok());
+        assert!(filter.validate("2147483647").is_ok()); // i32 max
+        assert!(filter.validate("2147483648").is_err()); // overflow
+    }
+
+    #[test]
+    fn test_sanitize_execute_filters_success() {
+        let filters = vec![
+            Sanitize::IsType(DesiredType::String),
+            Sanitize::MatchString("Hello".to_string()),
+        ];
+        let res = Sanitize::execute("Hello".to_string(), &filters);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), "Hello".to_string());
+    }
+
+    #[test]
+    fn test_sanitize_execute_filters_fail() {
+        let filters = vec![
+            Sanitize::MatchString("Hello".to_string()),
+            Sanitize::IsType(DesiredType::Bool),
+        ];
+        let res = Sanitize::execute("Hello".to_string(), &filters);
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(format!("{}", e), "The value is not a bool, try again!");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_execute_filters_fail2() {
+        let filters = vec![
+            Sanitize::IsType(DesiredType::Bool),
+            Sanitize::IsType(DesiredType::U8),
+        ];
+        let res = Sanitize::execute("true".to_string(), &filters);
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(format!("{}", e), "The value is not a u8, try again!");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_execute_filters_fail3() {
+        let filters = vec![
+            Sanitize::IsType(DesiredType::U8),
+            Sanitize::IsType(DesiredType::Bool),
+        ];
+        let res = Sanitize::execute("true".to_string(), &filters);
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(format!("{}", e), "The value is not a u8, try again!");
         }
     }
 }
