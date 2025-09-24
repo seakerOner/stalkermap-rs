@@ -41,5 +41,6 @@ fn main() {
             Err(e) => eprintln!("{}", e),
         }
     };
+
     println!("{}", url_input);
 }

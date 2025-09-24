@@ -102,7 +102,7 @@ impl Terminal {
 
             match io::stdin().read_line(&mut answer) {
                 Ok(_) => {
-                    let sanatized_answer = Sanitize::execute(answer, &filters);
+                    let sanatized_answer = Sanitize::execute(answer.as_str(), &filters);
 
                     match sanatized_answer {
                         Ok(data) => break data,
@@ -119,6 +119,6 @@ impl Terminal {
             };
         };
 
-        Terminal { answer: answer }
+        Terminal { answer }
     }
 }

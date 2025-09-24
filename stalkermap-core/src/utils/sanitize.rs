@@ -32,33 +32,27 @@ pub(crate) enum FilterErrorMessage {
     NotString(DesiredType),
     NotBool(DesiredType),
     NotMatchString(String),
-    NotMatchStrings(),
+    NotMatchStrings(Vec<String>),
 }
 
 impl Display for FilterErrorMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotNumber(t) => {
-                write!(f, "The value is not a {}, try again!", t)
-            }
-            Self::NotString(t) => {
-                write!(f, "The value is not a {}, try again!", t)
-            }
-            Self::NotBool(t) => {
-                write!(f, "The value is not a {}, try again!", t)
-            }
-            Self::NotMatchString(s) => {
-                write!(f, "The value doesn't match with {}, try again!", s)
-            }
-            Self::NotMatchStrings() => {
-                write!(f, "The value doesn't match with the options, try again!",)
-            }
+            Self::NotNumber(t) => write!(f, "The value is not a {}, try again!", t),
+            Self::NotString(t) => write!(f, "The value is not {}, try again!", t),
+            Self::NotBool(t) => write!(f, "The value is not a {}, try again!", t),
+            Self::NotMatchString(s) => write!(f, "The value doesn't match with {}, try again!", s),
+            Self::NotMatchStrings(v) => write!(
+                f,
+                "The value doesn't match with the options: {}, try again!",
+                v.join(", ")
+            ),
         }
     }
 }
 
 /// Macro helper that validates if an input string can be parsed into the given Rust type.  
-/// Expands into a `Result<(), FilterErrorMessage>`.
+/// Expands into a `Result<(), expr>`.
 ///
 /// # Parameters
 /// - `$input`: The input string to parse.
@@ -72,98 +66,16 @@ impl Display for FilterErrorMessage {
 /// check_type!(input, u8, Err(FilterErrorMessage::NotNumber(DesiredType::U8)));
 /// ```
 
-/// #[doc(hidden)]
+#[macro_export]
 macro_rules! check_type {
     ($input:expr, $t:ty, $err:expr) => {
         match $input.parse::<$t>() {
             Ok(_) => Ok(()),
-            Err(_) => return $err,
+            Err(_) => $err,
         }
     };
 }
 
-/// Matches a [`DesiredType`] variant and applies the corresponding [`check_type!`] validation.
-///
-/// Expands into a `match` that checks the input string against
-/// all supported [`DesiredType`] variants (string, bool, integers).
-///
-/// # Example
-/// ```rust,ignore
-/// use stalkermap_core::utils::DesiredType;
-///
-/// let input = "true";
-/// let desired = DesiredType::Bool;
-///
-/// match_sanitize!(input, desired)?; // succeeds if input parses as bool
-/// ```
-
-/// #[doc(hidden)]
-macro_rules! match_sanitize {
-    ( $input:expr, $sanitize:expr ) => {
-        match $sanitize {
-            DesiredType::String => check_type!(
-                $input,
-                String,
-                Err(FilterErrorMessage::NotString(DesiredType::String))
-            ),
-            DesiredType::Bool => check_type!(
-                $input,
-                bool,
-                Err(FilterErrorMessage::NotBool(DesiredType::Bool))
-            ),
-            DesiredType::U8 => check_type!(
-                $input,
-                u8,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U8))
-            ),
-            DesiredType::U16 => check_type!(
-                $input,
-                u16,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U16))
-            ),
-            DesiredType::U32 => check_type!(
-                $input,
-                u32,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U32))
-            ),
-            DesiredType::U64 => check_type!(
-                $input,
-                u64,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U64))
-            ),
-            DesiredType::U128 => check_type!(
-                $input,
-                u128,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U128))
-            ),
-            DesiredType::I8 => check_type!(
-                $input,
-                i8,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I8))
-            ),
-            DesiredType::I16 => check_type!(
-                $input,
-                i16,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I16))
-            ),
-            DesiredType::I32 => check_type!(
-                $input,
-                i32,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I32))
-            ),
-            DesiredType::I64 => check_type!(
-                $input,
-                i64,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I64))
-            ),
-            DesiredType::I128 => check_type!(
-                $input,
-                i128,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I128))
-            ),
-        }
-    };
-}
 impl Sanitize {
     /// Executes all provided filters against the given answer.
     ///
@@ -171,8 +83,8 @@ impl Sanitize {
     /// - Stops and returns the first error encountered.
     /// - Returns the cleaned string if all filters pass.
     pub(crate) fn execute(
-        answer: String,
-        filters: &Vec<Sanitize>,
+        answer: &str,
+        filters: &[Sanitize],
     ) -> Result<String, FilterErrorMessage> {
         let clean_answer = answer.trim();
 
@@ -189,7 +101,7 @@ impl Sanitize {
 impl Validate for Sanitize {
     fn validate(&self, input: &str) -> Result<(), FilterErrorMessage> {
         match self {
-            Sanitize::IsType(t) => match_sanitize!(input, t),
+            Sanitize::IsType(ty) => ty.parse(input),
             Sanitize::MatchString(s) => {
                 if input == s {
                     Ok(())
@@ -201,7 +113,7 @@ impl Validate for Sanitize {
                 if options.contains(&input.to_string()) {
                     Ok(())
                 } else {
-                    Err(FilterErrorMessage::NotMatchStrings())
+                    Err(FilterErrorMessage::NotMatchStrings(options.clone()))
                 }
             }
         }
@@ -231,6 +143,90 @@ pub enum DesiredType {
     I32,
     I64,
     I128,
+}
+
+impl DesiredType {
+    /// Matches a [`DesiredType`] variant and applies the corresponding [`check_type!`] validation.
+    ///
+    /// Expands into a `match` that checks the input string against
+    /// all supported [`DesiredType`] variants (string, bool, integers).
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use stalkermap_core::utils::DesiredType;
+    ///
+    /// let input = "true";
+    /// let desired = DesiredType::Bool;
+    ///
+    /// desired.parse(input)? // succeeds if input parses as bool
+    /// ```
+
+    fn parse(&self, input: &str) -> Result<(), FilterErrorMessage> {
+        match self {
+            DesiredType::String => {
+                check_type!(
+                    input,
+                    String,
+                    Err(FilterErrorMessage::NotString(DesiredType::String))
+                )
+            }
+            DesiredType::Bool => check_type!(
+                input,
+                bool,
+                Err(FilterErrorMessage::NotBool(DesiredType::Bool))
+            ),
+            DesiredType::U8 => check_type!(
+                input,
+                u8,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U8))
+            ),
+            DesiredType::U16 => check_type!(
+                input,
+                u16,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U16))
+            ),
+            DesiredType::U32 => check_type!(
+                input,
+                u32,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U32))
+            ),
+            DesiredType::U64 => check_type!(
+                input,
+                u64,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U64))
+            ),
+            DesiredType::U128 => check_type!(
+                input,
+                u128,
+                Err(FilterErrorMessage::NotNumber(DesiredType::U128))
+            ),
+            DesiredType::I8 => check_type!(
+                input,
+                i8,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I8))
+            ),
+            DesiredType::I16 => check_type!(
+                input,
+                i16,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I16))
+            ),
+            DesiredType::I32 => check_type!(
+                input,
+                i32,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I32))
+            ),
+            DesiredType::I64 => check_type!(
+                input,
+                i64,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I64))
+            ),
+            DesiredType::I128 => check_type!(
+                input,
+                i128,
+                Err(FilterErrorMessage::NotNumber(DesiredType::I128))
+            ),
+        }
+    }
 }
 
 impl Display for DesiredType {
@@ -290,7 +286,7 @@ mod tests {
         if let Err(e) = res {
             assert_eq!(
                 format!("{}", e),
-                "The value doesn't match with the options, try again!"
+                "The value doesn't match with the options: A, B, try again!"
             );
         }
     }
@@ -326,7 +322,7 @@ mod tests {
             Sanitize::IsType(DesiredType::String),
             Sanitize::MatchString("Hello".to_string()),
         ];
-        let res = Sanitize::execute("Hello".to_string(), &filters);
+        let res = Sanitize::execute("Hello", &filters);
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), "Hello".to_string());
     }
@@ -337,7 +333,7 @@ mod tests {
             Sanitize::MatchString("Hello".to_string()),
             Sanitize::IsType(DesiredType::Bool),
         ];
-        let res = Sanitize::execute("Hello".to_string(), &filters);
+        let res = Sanitize::execute("Hello", &filters);
         assert!(res.is_err());
         if let Err(e) = res {
             assert_eq!(format!("{}", e), "The value is not a bool, try again!");
@@ -350,7 +346,7 @@ mod tests {
             Sanitize::IsType(DesiredType::Bool),
             Sanitize::IsType(DesiredType::U8),
         ];
-        let res = Sanitize::execute("true".to_string(), &filters);
+        let res = Sanitize::execute("true", &filters);
         assert!(res.is_err());
         if let Err(e) = res {
             assert_eq!(format!("{}", e), "The value is not a u8, try again!");
@@ -363,10 +359,26 @@ mod tests {
             Sanitize::IsType(DesiredType::U8),
             Sanitize::IsType(DesiredType::Bool),
         ];
-        let res = Sanitize::execute("true".to_string(), &filters);
+        let res = Sanitize::execute("true", &filters);
         assert!(res.is_err());
         if let Err(e) = res {
             assert_eq!(format!("{}", e), "The value is not a u8, try again!");
+        }
+    }
+
+    #[test]
+    fn test_sanitize_execute_filters_fail4() {
+        let filters = vec![
+            Sanitize::IsType(DesiredType::String),
+            Sanitize::MatchStrings(vec![String::from("banana"), String::from("orange")]),
+        ];
+        let res = Sanitize::execute("watermelon", &filters);
+        assert!(res.is_err());
+        if let Err(e) = res {
+            assert_eq!(
+                format!("{}", e),
+                "The value doesn't match with the options: banana, orange, try again!"
+            );
         }
     }
 }

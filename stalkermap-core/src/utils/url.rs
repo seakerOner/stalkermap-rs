@@ -24,6 +24,7 @@ use std::{
 /// - [`TargetType`] (DNS, IPv4, IPv6)
 /// - Associated port
 /// - Full normalized URL
+#[derive(Debug, PartialEq)]
 pub struct UrlParser {
     scheme: Scheme,
     target: String,
@@ -37,13 +38,14 @@ impl Display for UrlParser {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Scheme:{}\nTarget:{}\nTarget type:{}\nPort:{}\nSub directory:{}\nFull url:{}",
+            "Scheme: {}\nTarget: {}\nTarget type: {}\nPort: {}\nSub directory: {}\nFull url: {}",
             self.scheme, self.target, self.target_type, self.port, self.subdirectory, self.full_url
         )
     }
 }
 
 /// Represents the scheme of a URL (`http` or `https`).
+#[derive(Debug, PartialEq)]
 pub enum Scheme {
     Http,
     Https,
@@ -64,6 +66,7 @@ impl Display for Scheme {
 /// - `Dns`
 /// - `IPv4`
 /// - `IPv6`
+#[derive(Debug, PartialEq)]
 pub enum TargetType {
     Dns,
     IPv4,
@@ -126,7 +129,8 @@ impl TargetType {
 
     /// Checks if the provided string is a valid IPv6 address.
     pub fn is_ipv6(target: &str) -> Result<TargetType, UrlParserErrors> {
-        match Ipv6Addr::from_str(target) {
+        let clean_ip = target.trim_matches(['[', ']'].as_ref());
+        match Ipv6Addr::from_str(clean_ip) {
             Ok(_) => Ok(TargetType::IPv6),
             Err(_) => Err(UrlParserErrors::InvalidTargetType),
         }
@@ -170,12 +174,6 @@ impl Display for UrlParserErrors {
 }
 
 impl Error for UrlParserErrors {}
-
-impl From<()> for UrlParserErrors {
-    fn from(_value: ()) -> Self {
-        UrlParserErrors::InvalidTargetType
-    }
-}
 
 /// Helper macro to safely slice a string with error handling.
 ///
@@ -228,16 +226,34 @@ impl UrlParser {
 
         let target: String = {
             match scheme {
-                Scheme::Http => url
-                    .chars()
-                    .skip(7)
-                    .take_while(|c| *c != ':' && *c != '/')
-                    .collect(),
-                Scheme::Https => url
-                    .chars()
-                    .skip(8)
-                    .take_while(|c| *c != ':' && *c != '/')
-                    .collect(),
+                Scheme::Http => {
+                    if url[7..].starts_with('[') {
+                        url[7..]
+                            .chars()
+                            .take_while(|c| *c != ']')
+                            .chain(std::iter::once(']'))
+                            .collect()
+                    } else {
+                        url.chars()
+                            .skip(7)
+                            .take_while(|c| *c != ':' && *c != '/')
+                            .collect()
+                    }
+                }
+                Scheme::Https => {
+                    if url[8..].starts_with('[') {
+                        url[8..]
+                            .chars()
+                            .take_while(|c| *c != ']')
+                            .chain(std::iter::once(']'))
+                            .collect()
+                    } else {
+                        url.chars()
+                            .skip(8)
+                            .take_while(|c| *c != ':' && *c != '/')
+                            .collect()
+                    }
+                }
             }
         };
 
@@ -313,5 +329,130 @@ impl UrlParser {
             subdirectory,
             full_url,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_urlparser_valid_http_dns() {
+        let url = UrlParser::new("http://example.com").unwrap();
+        assert_eq!(format!("{}", url.scheme), "http");
+        assert_eq!(url.target, "example.com");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 0);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "http://example.com");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: http Target: example.com Target type: dns Port: 0 Sub directory: Full url: http://example.com"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_valid_https_dns_with_path() {
+        let url = UrlParser::new("https://example.com/test/path").unwrap();
+        assert_eq!(format!("{}", url.scheme), "https");
+        assert_eq!(url.target, "example.com");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 0);
+        assert_eq!(url.subdirectory, "/test/path");
+        assert_eq!(url.full_url, "https://example.com/test/path");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: https Target: example.com Target type: dns Port: 0 Sub directory: /test/path Full url: https://example.com/test/path"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_valid_https_dns_with_port_and_path() {
+        let url = UrlParser::new("https://example.com:420/test/path").unwrap();
+        assert_eq!(format!("{}", url.scheme), "https");
+        assert_eq!(url.target, "example.com");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 420);
+        assert_eq!(url.subdirectory, "/test/path");
+        assert_eq!(url.full_url, "https://example.com:420/test/path");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: https Target: example.com Target type: dns Port: 420 Sub directory: /test/path Full url: https://example.com:420/test/path"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_valid_http_with_port() {
+        let url = UrlParser::new("http://localhost:8080").unwrap();
+        assert_eq!(format!("{}", url.scheme), "http");
+        assert_eq!(url.target, "localhost");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 8080);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "http://localhost:8080");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: http Target: localhost Target type: dns Port: 8080 Sub directory: Full url: http://localhost:8080"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_valid_ipv4() {
+        let url = UrlParser::new("http://127.0.0.1").unwrap();
+        assert_eq!(format!("{}", url.scheme), "http");
+        assert_eq!(url.target, "127.0.0.1");
+        assert_eq!(format!("{}", url.target_type), "ipv4");
+        assert_eq!(url.port, 0);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "http://127.0.0.1");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: http Target: 127.0.0.1 Target type: ipv4 Port: 0 Sub directory: Full url: http://127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_valid_ipv6() {
+        let url = UrlParser::new("https://[::1]").unwrap();
+        assert_eq!(format!("{}", url.scheme), "https");
+        assert_eq!(url.target, "[::1]");
+        assert_eq!(format!("{}", url.target_type), "ipv6");
+        assert_eq!(url.port, 0);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "https://[::1]");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: https Target: [::1] Target type: ipv6 Port: 0 Sub directory: Full url: https://[::1]"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_invalid_empty_url() {
+        let res = UrlParser::new("");
+        assert!(matches!(res, Err(UrlParserErrors::UrlEmpty)));
+    }
+
+    #[test]
+    fn test_url_urlparser_invalid_scheme() {
+        let res = UrlParser::new("ftp://example.com");
+        assert!(matches!(res, Err(UrlParserErrors::InvalidSchemeSyntax)));
+    }
+
+    #[test]
+    fn test_url_urlparser_invalid_dns() {
+        let res = UrlParser::new("http://exa$mple.com");
+        assert!(matches!(res, Err(UrlParserErrors::InvalidTargetType)));
+    }
+
+    #[test]
+    fn test_url_urlparser_invalid_port_not_number() {
+        let res = UrlParser::new("http://example.com:abcd");
+        assert!(matches!(res, Err(UrlParserErrors::InvalidPort)));
+    }
+
+    #[test]
+    fn test_url_urlparser_invalid_port_out_of_range() {
+        let res = UrlParser::new("http://example.com:70000");
+        assert!(matches!(res, Err(UrlParserErrors::InvalidPort)));
     }
 }
