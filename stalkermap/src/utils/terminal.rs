@@ -47,6 +47,19 @@
 //!
 //! println!("The input: {}", input.answer);
 //! ```
+//!
+//! ### Example 3: Numeric range input
+//! ```rust,no_run
+//! use stalkermap::utils::{DesiredType, Sanitize, Terminal};
+//!
+//! let input = Terminal::ask(
+//!     "Enter a number between 1 and 10:",
+//!     &[
+//!         Sanitize::IsBetween(1, 10),
+//!     ],
+//! );
+//! println!("The input: {}", input.answer);
+//! ```
 
 use crate::utils::sanitize::Sanitize;
 use std::io;

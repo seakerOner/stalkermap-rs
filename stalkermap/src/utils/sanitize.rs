@@ -1,14 +1,16 @@
-use std::fmt::Display;
+use std::{fmt::Display, isize};
 
 /// Represents a validation filter that can be applied to user input.
 ///
 /// - `MatchString`: ensures that the input matches a specific string.
 /// - `MatchStrings`: ensures that the input matches one of the given options.
 /// - `IsType`: ensures that the input can be parsed into a certain [`DesiredType`].
+/// - `IsBetween`: ensures that a numeric input is within an inclusive range `[min, max]`.
 pub enum Sanitize {
     MatchString(String),
     MatchStrings(Vec<String>),
     IsType(DesiredType),
+    IsBetween(isize, isize),
 }
 
 /// Trait for input validation.  
@@ -33,6 +35,7 @@ pub(crate) enum FilterErrorMessage {
     NotBool(DesiredType),
     NotMatchString(String),
     NotMatchStrings(Vec<String>),
+    NotBetween(isize, isize),
 }
 
 impl Display for FilterErrorMessage {
@@ -47,6 +50,9 @@ impl Display for FilterErrorMessage {
                 "The value doesn't match with the options: {}, try again!",
                 v.join(", ")
             ),
+            Self::NotBetween(n1, n2) => {
+                write!(f, "The value is not between {} and {}, try again!", n1, n2)
+            }
         }
     }
 }
@@ -116,6 +122,17 @@ impl Validate for Sanitize {
                     Err(FilterErrorMessage::NotMatchStrings(options.clone()))
                 }
             }
+            Sanitize::IsBetween(n1, n2) => match DesiredType::Isize.parse(input) {
+                Ok(_) => {
+                    let input_parsed: isize = input.parse().unwrap_or_default();
+                    if input_parsed >= *n1 && input_parsed <= *n2 {
+                        Ok(())
+                    } else {
+                        Err(FilterErrorMessage::NotBetween(*n1, *n2))
+                    }
+                }
+                Err(e) => Err(e),
+            },
         }
     }
 }
@@ -129,6 +146,7 @@ impl Validate for Sanitize {
 /// - `Bool`
 /// - Unsigned integers: `U8`, `U16`, `U32`, `U64`, `U128`
 /// - Signed integers: `I8`, `I16`, `I32`, `I64`, `I128`
+/// - Platform-sized integer: `Isize`
 #[derive(Debug)]
 pub enum DesiredType {
     String,
@@ -143,6 +161,7 @@ pub enum DesiredType {
     I32,
     I64,
     I128,
+    Isize,
 }
 
 impl DesiredType {
@@ -225,6 +244,11 @@ impl DesiredType {
                 i128,
                 Err(FilterErrorMessage::NotNumber(DesiredType::I128))
             ),
+            DesiredType::Isize => check_type!(
+                input,
+                isize,
+                Err(FilterErrorMessage::NotNumber(DesiredType::Isize))
+            ),
         }
     }
 }
@@ -244,6 +268,7 @@ impl Display for DesiredType {
             Self::I32 => write!(f, "i32"),
             Self::I64 => write!(f, "i64"),
             Self::I128 => write!(f, "i128"),
+            Self::Isize => write!(f, "isize"),
         }
     }
 }
@@ -314,6 +339,14 @@ mod tests {
         assert!(filter.validate("-123").is_ok());
         assert!(filter.validate("2147483647").is_ok()); // i32 max
         assert!(filter.validate("2147483648").is_err()); // overflow
+    }
+
+    #[test]
+    fn test_sanitize_is_type_isize() {
+        let filter = Sanitize::IsBetween(10, 20);
+        assert!(filter.validate("15").is_ok());
+        assert!(filter.validate("25").is_err()); // Over 20 
+        assert!(filter.validate("-20").is_err()); // overflow
     }
 
     #[test]

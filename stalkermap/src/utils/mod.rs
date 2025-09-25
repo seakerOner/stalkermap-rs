@@ -36,8 +36,9 @@
 //! - **Type Validation**: Ensure input can be parsed as specific Rust types
 //! - **Exact String Matching**: Require input to match a specific string
 //! - **Multiple Option Matching**: Allow input to match one of several valid options
+//! - **Range Validation**: Ensure numeric input falls within an inclusive range using `Sanitize::IsBetween(min, max)`
 //!
-//! #### Type Validation Examples
+//! #### Type & Range Validation Examples
 //!
 //! ```rust,no_run
 //! use stalkermap::utils::{Sanitize, DesiredType};
@@ -50,6 +51,9 @@
 //!
 //! // Validate as signed 32-bit integer
 //! let signed_filter = Sanitize::IsType(DesiredType::I32);
+//!
+//! // Validate a value is between 10 and 20 (inclusive)
+//! let in_range = Sanitize::IsBetween(10, 20);
 //! ```
 //!
 //! #### String Matching Examples

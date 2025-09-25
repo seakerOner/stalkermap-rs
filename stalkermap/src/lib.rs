@@ -35,17 +35,17 @@
 //!
 //! ## Usage Examples
 //!
-//! ### Basic Input Validation
+//! ### Basic Input & Range Validation
 //!
 //! ```rust,no_run
 //! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
-//! // Get validated user input
-//! let user_input = Terminal::ask(
-//!     "Enter target URL:",
-//!     &[Sanitize::IsType(DesiredType::String)],
+//! // Get validated user input with range checking
+//! let threads = Terminal::ask(
+//!     "Enter scan threads (1-16):",
+//!     &[Sanitize::IsBetween(1, 16)],
 //! );
-//! println!("Target: {}", user_input.answer);
+//! println!("Threads: {}", threads.answer);
 //! ```
 //!
 //! ### URL Parsing and Validation
