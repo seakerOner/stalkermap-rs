@@ -1,3 +1,71 @@
+//! # Input Sanitization & Validation
+//!
+//! This module provides a small yet flexible input validation framework for
+//! interactive CLI applications. It defines a set of composable validation
+//! filters (`Sanitize`) that can be applied to user-provided strings. Filters
+//! run in order and short-circuit on the first failure, returning a friendly
+//! error message describing what went wrong.
+//!
+//! ## Features
+//! - Type validation for common Rust primitives via [`DesiredType`]
+//! - Exact string matching with [`Sanitize::MatchString`]
+//! - Multiple-option matching with [`Sanitize::MatchStrings`]
+//! - Inclusive range validation with [`Sanitize::IsBetween`]
+//! - Human-readable error messages for invalid input
+//!
+//! ## When to use
+//! Use this module whenever you collect raw user input (e.g. via
+//! [`crate::utils::Terminal::ask`]) and need to ensure it matches certain
+//! constraints before proceeding.
+//!
+//! ## Examples
+//!
+//! ### Validate types
+//! ```rust,no_run
+//! use stalkermap::utils::{DesiredType, Sanitize, Terminal};
+//!
+//! let input = Terminal::ask(
+//!     "Enter a boolean (true/false):",
+//!     &[Sanitize::IsType(DesiredType::Bool)],
+//! );
+//! println!("Accepted: {}", input.answer);
+//! ```
+//!
+//! ### Match exact strings or options
+//! ```rust,no_run
+//! use stalkermap::utils::{DesiredType, Sanitize, Terminal};
+//!
+//! // Exact match
+//! let yes = Terminal::ask(
+//!     "Type yes to continue:",
+//!     &[
+//!         Sanitize::IsType(DesiredType::String),
+//!         Sanitize::MatchString("yes".to_string()),
+//!     ],
+//! );
+//!
+//! // Any of the options
+//! let yn = Terminal::ask(
+//!     "Continue? (y/n):",
+//!     &[
+//!         Sanitize::IsType(DesiredType::String),
+//!         Sanitize::MatchStrings(vec!["y".to_string(), "n".to_string()]),
+//!     ],
+//! );
+//! println!("{} {}", yes.answer, yn.answer);
+//! ```
+//!
+//! ### Validate numeric range
+//! ```rust,no_run
+//! use stalkermap::utils::{Sanitize, Terminal};
+//!
+//! // Ensure input is an integer between 1 and 10 (inclusive)
+//! let number = Terminal::ask(
+//!     "Enter a number between 1 and 10:",
+//!     &[Sanitize::IsBetween(1, 10)],
+//! );
+//! println!("In range: {}", number.answer);
+//! ```
 use std::{fmt::Display, isize};
 
 /// Represents a validation filter that can be applied to user input.
@@ -28,6 +96,7 @@ trait Validate {
 /// - [`NotBool`]: could not parse as boolean.
 /// - [`NotMatchString`]: did not match the required string.
 /// - [`NotMatchStrings`]: did not match any of the given options.
+/// - [`NotBetween`]: did not match between the values given.
 #[derive(Debug)]
 pub(crate) enum FilterErrorMessage {
     NotNumber(DesiredType),

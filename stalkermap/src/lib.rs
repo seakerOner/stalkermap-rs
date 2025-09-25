@@ -154,7 +154,7 @@
 //!
 //! ## Contributing
 //!
-//! Contributions are welcome! Please see the [GitHub repository](https://github.com/yourusername/stalkermap-rs)
+//! Contributions are welcome! Please see the [GitHub repository](https://github.com/seakerOner/stalkermap-rs)
 //! for contribution guidelines.
 //!
 //! ## License
