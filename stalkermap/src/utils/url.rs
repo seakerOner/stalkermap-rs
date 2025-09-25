@@ -16,13 +16,13 @@
 //! use stalkermap::utils::UrlParser;
 //!
 //! // Via `new` constructor (returns Result)
-//! let url = UrlParser::new("https://example.com").unwrap();
+//! let url = UrlParser::new("<https://example.com>").unwrap();
 //!
 //! // Via `parse` using FromStr (returns Result)
-//! let url2: UrlParser = "https://example.com".parse().unwrap();
+//! let url2: UrlParser = "<https://example.com>".parse().unwrap();
 //!
 //! // Via TryFrom (returns Result)
-//! let url3 = UrlParser::try_from("https://example.com").unwrap();
+//! let url3 = UrlParser::try_from("<https://example.com>").unwrap();
 //!
 //! // Note: `From<&str>` is intentionally not implemented, because parsing may fail.
 //! // Users should use `new`, `parse`, or `TryFrom` for safe URL creation.
@@ -200,7 +200,7 @@ impl Error for UrlParserErrors {}
 /// # Example
 /// ```rust,ignore
 ///
-/// let s = "https://example.com";
+/// let s = "<https://example.com>";
 /// let scheme = subslice!(s, ..5, UrlParserErrors::InvalidSize);
 /// ```
 
@@ -235,16 +235,16 @@ impl UrlParser {
     /// - The URL is empty
     ///
     /// # Example
-    ///  ///```
+    ///  ```
     /// use stalkermap::utils::UrlParser;
     ///
     /// // Safe creation via `new`
-    /// let url = UrlParser::new("http://example.com").unwrap();
-    /// assert_eq!(url.full_url, "http://example.com");
+    /// let url = UrlParser::new("<http://example.com>").unwrap();
+    /// assert_eq!(url.full_url, "<http://example.com>");
     ///
     /// // Also usable via `parse` (FromStr) or `TryFrom`
-    /// let url2: UrlParser = "http://example.com".parse().unwrap();
-    /// let url3 = UrlParser::try_from("http://example.com").unwrap();
+    /// let url2: UrlParser = "<http://example.com>".parse().unwrap();
+    /// let url3 = UrlParser::try_from("<http://example.com>").unwrap();
     /// ```
 
     pub fn new(input_url: &str) -> Result<UrlParser, UrlParserErrors> {

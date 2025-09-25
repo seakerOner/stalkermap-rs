@@ -65,7 +65,6 @@ use crate::utils::sanitize::Sanitize;
 use std::io;
 
 /// A helper for repeatedly asking the user for input until it passes all [`Sanitize`] filters.  
-/// Internally calls [`Sanitize::execute`].
 ///
 /// # Examples
 ///

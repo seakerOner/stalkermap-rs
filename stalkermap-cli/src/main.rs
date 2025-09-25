@@ -31,9 +31,6 @@ fn main() {
         "------------------------------------------------------------------------------------",
     );
 
-    let banana = Terminal::ask("Between 1-10: ", &[Sanitize::IsBetween(1, 10)]);
-    println!("{}", banana.answer);
-
     let url_input = loop {
         let input = Terminal::ask(
             "Input the target's url: ",
