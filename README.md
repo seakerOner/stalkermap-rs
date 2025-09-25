@@ -12,13 +12,13 @@ StalkerMap provides the foundational utilities needed to create interactive comm
 
 ## Features
 
-### ✅ Currently Available
+### Currently Available
 
 - **Input Sanitization & Validation** - Type-safe input validation with composable filters
 - **Interactive Terminal Interface** - User-friendly CLI input with validation loops  
 - **URL Parsing** - Comprehensive HTTP/HTTPS URL parsing with host validation
 
-### 🚧 Planned Features
+### Planned Features
 
 - **DNS Queries** - Resolve hostnames and perform DNS lookups
 - **Port Scanning** - Efficient port scanning with customizable options
@@ -170,5 +170,4 @@ See [CHANGELOG.md](CHANGELOG.md) for a list of changes and version history.
 ## Documentation
 
 - [API Documentation](https://docs.rs/stalkermap)
-- [Examples](https://github.com/seakerOner/stalkermap-rs/tree/main/examples)
 - [Changelog](CHANGELOG.md)

@@ -154,15 +154,12 @@
 //!
 //! ## Contributing
 //!
-//! Contributions are welcome! Please see the [GitHub repository](https://github.com/seakerOner/stalkermap-rs)
-//! for contribution guidelines.
-//!
 //! ## License
 //!
-//! This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+//! This project is licensed under the MIT License - see the [LICENSE](https://github.com/seakerOner/stalkermap-rs/blob/master/LICENSE) file for details.
 //!
 //! ## Changelog
 //!
-//! See [CHANGELOG.md](CHANGELOG.md) for a list of changes and version history.
+//! See [CHANGELOG.md](https://github.com/seakerOner/stalkermap-rs/blob/master/CHANGELOG.md) for a list of changes and version history.
 
 pub mod utils;

@@ -10,8 +10,7 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
-## [0.1.0] - 2024-12-19
-
+## [0.1.0] - 26-09-2025
 ### Added
 - Input validation with `Sanitize` enum
   - Type checking for primitives (`DesiredType`)

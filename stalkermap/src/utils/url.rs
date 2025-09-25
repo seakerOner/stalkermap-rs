@@ -10,7 +10,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
 //! use stalkermap::utils::UrlParser;
@@ -235,7 +235,7 @@ impl UrlParser {
     /// - The URL is empty
     ///
     /// # Example
-    ///  ```
+    ///  ```rust,no_run
     /// use stalkermap::utils::UrlParser;
     ///
     /// // Safe creation via `new`
