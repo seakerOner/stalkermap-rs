@@ -13,7 +13,7 @@
 //! ```rust
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
-//! use stalkermap_core::utils::UrlParser;
+//! use stalkermap::utils::UrlParser;
 //!
 //! // Via `new` constructor (returns Result)
 //! let url = UrlParser::new("https://example.com").unwrap();
@@ -236,7 +236,7 @@ impl UrlParser {
     ///
     /// # Example
     ///  ///```
-    /// use stalkermap_core::utils::UrlParser;
+    /// use stalkermap::utils::UrlParser;
     ///
     /// // Safe creation via `new`
     /// let url = UrlParser::new("http://example.com").unwrap();

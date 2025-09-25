@@ -1,4 +1,4 @@
-//! # StalkerMap Core Utilities
+//! # StalkerMap Utilities
 //!
 //! A comprehensive toolkit for building interactive CLI applications with robust input validation,
 //! terminal interaction, and URL parsing capabilities.
@@ -14,7 +14,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType, UrlParser};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
 //!
 //! // Get validated user input
 //! let user_input = Terminal::ask(
@@ -40,7 +40,7 @@
 //! #### Type Validation Examples
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Sanitize, DesiredType};
+//! use stalkermap::utils::{Sanitize, DesiredType};
 //!
 //! // Validate as boolean
 //! let bool_filter = Sanitize::IsType(DesiredType::Bool);
@@ -55,7 +55,7 @@
 //! #### String Matching Examples
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::Sanitize;
+//! use stalkermap::utils::Sanitize;
 //!
 //! // Exact string match
 //! let exact_match = Sanitize::MatchString("yes".to_string());
@@ -86,7 +86,7 @@
 //! #### Basic Usage
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! // Simple boolean input
 //! let response = Terminal::ask(
@@ -99,7 +99,7 @@
 //! #### Complex Validation
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! // Multiple validation rules
 //! let choice = Terminal::ask(
@@ -140,7 +140,7 @@
 //! #### Basic Usage
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::UrlParser;
+//! use stalkermap::utils::UrlParser;
 //!
 //! // Parse a URL
 //! match UrlParser::new("https://example.com/api/users") {
@@ -158,7 +158,7 @@
 //! #### Alternative Creation Methods
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::UrlParser;
+//! use stalkermap::utils::UrlParser;
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
 //!
@@ -197,7 +197,7 @@
 //! ## Complete Example: Interactive URL Input
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType, UrlParser};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
 //!
 //! fn main() {
 //!    let url = loop {
@@ -221,7 +221,7 @@
 //! ### Combining Multiple Validations
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! // Validate that input is a number AND within a specific range
 //! let age_input = Terminal::ask(
@@ -239,7 +239,7 @@
 //! ### Case-Insensitive String Matching
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! let response = Terminal::ask(
 //!     "Continue? (yes/no):",

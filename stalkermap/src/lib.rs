@@ -1,23 +1,23 @@
-//! # StalkerMap Core
+//! # StalkerMap
 //!
 //! A comprehensive Rust library for building CLI network scanner applications with robust input validation,
 //! terminal interaction, and URL parsing capabilities.
 //!
 //! ## Overview
 //!
-//! StalkerMap Core provides the foundational utilities needed to create interactive command-line
+//! StalkerMap provides the foundational utilities needed to create interactive command-line
 //! network scanning tools. The library emphasizes safety, performance, and ease of use through
 //! Rust's type system and zero-dependency design.
 //!
 //! ## Features
 //!
-//! # Currently Available
+//!  Currently Available
 //!
 //! - **Input Sanitization & Validation** - Type-safe input validation with composable filters
 //! - **Interactive Terminal Interface** - User-friendly CLI input with validation loops
 //! - **URL Parsing** - Comprehensive HTTP/HTTPS URL parsing with host validation
 //!
-//! # Planned Features
+//!  Planned Features
 //!
 //! - **DNS Queries** - Resolve hostnames and perform DNS lookups
 //! - **Port Scanning** - Efficient port scanning with customizable options
@@ -30,7 +30,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! stalkermap-core = "0.1.0"
+//! stalkermap = "0.1.0"
 //! ```
 //!
 //! ## Usage Examples
@@ -38,7 +38,7 @@
 //! ### Basic Input Validation
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! // Get validated user input
 //! let user_input = Terminal::ask(
@@ -51,7 +51,7 @@
 //! ### URL Parsing and Validation
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::UrlParser;
+//! use stalkermap::utils::UrlParser;
 //!
 //! // Parse and validate URLs
 //! match UrlParser::new("https://example.com:8080/api") {
@@ -68,7 +68,7 @@
 //! ### Complex Input Validation
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType};
 //!
 //! // Multiple validation rules
 //! let choice = Terminal::ask(
@@ -90,7 +90,7 @@
 //! and parsing URLs - perfect for network scanner applications:
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{Terminal, Sanitize, DesiredType, UrlParser};
+//! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
 //!
 //! fn main() {
 //!     // Get URL from user with validation
@@ -142,7 +142,7 @@
 //! All operations return `Result<T, E>` types for safe error handling:
 //!
 //! ```rust,no_run
-//! use stalkermap_core::utils::{UrlParser, UrlParserErrors};
+//! use stalkermap::utils::{UrlParser, UrlParserErrors};
 //!
 //! match UrlParser::new("invalid-url") {
 //!     Ok(url) => println!("Valid URL: {}", url),

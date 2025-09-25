@@ -153,7 +153,7 @@ impl DesiredType {
     ///
     /// # Example
     /// ```rust,ignore
-    /// use stalkermap_core::utils::DesiredType;
+    /// use stalkermap::utils::DesiredType;
     ///
     /// let input = "true";
     /// let desired = DesiredType::Bool;

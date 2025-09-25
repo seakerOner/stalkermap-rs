@@ -18,7 +18,7 @@
 //!
 //! ### Example 1: Boolean input
 //! ```rust, no_run
-//! use stalkermap_core::utils::{DesiredType, Sanitize, Terminal};
+//! use stalkermap::utils::{DesiredType, Sanitize, Terminal};
 //!
 //! let input = Terminal::ask(
 //!     "Do you like Rust? (true/false)",
@@ -30,7 +30,7 @@
 //!
 //! ### Example 2: Restricted string input
 //! ```rust,no_run
-//! use stalkermap_core::utils::{DesiredType, Sanitize, Terminal};
+//! use stalkermap::utils::{DesiredType, Sanitize, Terminal};
 //!
 //! let input = Terminal::ask(
 //!     "Do you like Rust? Y/N",
@@ -58,7 +58,7 @@ use std::io;
 ///
 /// ## Example 1: Boolean input
 /// ```rust,no_run
-/// use stalkermap_core::utils::{DesiredType, Sanitize, Terminal};
+/// use stalkermap::utils::{DesiredType, Sanitize, Terminal};
 ///
 ///
 /// let input = Terminal::ask(
@@ -71,7 +71,7 @@ use std::io;
 ///
 /// ## Example 2: Restricted string input
 /// ```rust,no_run
-/// use stalkermap_core::utils::{DesiredType, Sanitize, Terminal};
+/// use stalkermap::utils::{DesiredType, Sanitize, Terminal};
 ///
 /// let input2 = Terminal::ask(
 ///     "You like Rust? Y/N",

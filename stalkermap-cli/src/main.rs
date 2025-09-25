@@ -1,7 +1,7 @@
-//use stalkermap_core::utils::sanitize::{DesiredType, Sanitize};
-//use stalkermap_core::utils::terminal::Terminal;
-//use stalkermap_core::utils::url;
-use stalkermap_core::utils::*;
+//use stalkermap::utils::sanitize::{DesiredType, Sanitize};
+//use stalkermap::utils::terminal::Terminal;
+//use stalkermap::utils::url;
+use stalkermap::utils::*;
 fn main() {
     println!(
         "------------------------------------------------------------------------------------",
