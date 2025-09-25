@@ -22,7 +22,7 @@
 //!
 //! let input = Terminal::ask(
 //!     "Do you like Rust? (true/false)",
-//!     vec![Sanitize::IsType(DesiredType::Bool)],
+//!     &[Sanitize::IsType(DesiredType::Bool)],
 //! );
 //!
 //! println!("The input: {}", input.answer);
@@ -34,7 +34,7 @@
 //!
 //! let input = Terminal::ask(
 //!     "Do you like Rust? Y/N",
-//!     vec![
+//!     &[
 //!         Sanitize::IsType(DesiredType::String),
 //!         Sanitize::MatchStrings(vec![
 //!             String::from("Y"),
@@ -63,7 +63,7 @@ use std::io;
 ///
 /// let input = Terminal::ask(
 ///     "You like Rust? (true/false)",
-///     vec![Sanitize::IsType(DesiredType::Bool)],
+///     &[Sanitize::IsType(DesiredType::Bool)],
 /// );
 ///
 /// println!("The input: {}", input.answer);
@@ -75,7 +75,7 @@ use std::io;
 ///
 /// let input2 = Terminal::ask(
 ///     "You like Rust? Y/N",
-///     vec![
+///     &[
 ///         Sanitize::IsType(DesiredType::String),
 ///         Sanitize::MatchStrings(vec![
 ///             String::from("Y"),
@@ -95,7 +95,7 @@ pub struct Terminal {
 impl Terminal {
     /// Prints a question to the terminal and loops until a valid answer is received.  
     /// Returns a [`Terminal`] struct containing the accepted answer.
-    pub fn ask(question: &str, filters: Vec<Sanitize>) -> Terminal {
+    pub fn ask(question: &str, filters: &[Sanitize]) -> Terminal {
         let answer: String = loop {
             println!("{}", question);
             let mut answer = String::new();

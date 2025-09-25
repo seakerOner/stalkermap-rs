@@ -34,7 +34,7 @@ fn main() {
     let url_input = loop {
         let input = Terminal::ask(
             "Input the target's url: ",
-            vec![Sanitize::IsType(DesiredType::String)],
+            &[Sanitize::IsType(DesiredType::String)],
         );
         match UrlParser::new(&input.answer) {
             Ok(u) => break u,

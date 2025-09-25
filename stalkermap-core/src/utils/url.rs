@@ -9,6 +9,24 @@
 //! - No external dependencies
 //!
 //! ## Example
+//!
+//! ```rust
+//! use std::str::FromStr;
+//! use std::convert::TryFrom;
+//! use stalkermap_core::utils::UrlParser;
+//!
+//! // Via `new` constructor (returns Result)
+//! let url = UrlParser::new("https://example.com").unwrap();
+//!
+//! // Via `parse` using FromStr (returns Result)
+//! let url2: UrlParser = "https://example.com".parse().unwrap();
+//!
+//! // Via TryFrom (returns Result)
+//! let url3 = UrlParser::try_from("https://example.com").unwrap();
+//!
+//! // Note: `From<&str>` is intentionally not implemented, because parsing may fail.
+//! // Users should use `new`, `parse`, or `TryFrom` for safe URL creation.
+//! ```
 
 use std::str::FromStr;
 use std::{
@@ -22,16 +40,16 @@ use std::{
 /// Contains information about:
 /// - [`Scheme`] (`http` or `https`)
 /// - [`TargetType`] (DNS, IPv4, IPv6)
-/// - Associated port
+/// - Associated port (0 is the default and its not included on the url)
 /// - Full normalized URL
 #[derive(Debug, PartialEq)]
 pub struct UrlParser {
-    scheme: Scheme,
-    target: String,
-    target_type: TargetType,
-    port: u16,
-    subdirectory: String,
-    full_url: String,
+    pub scheme: Scheme,
+    pub target: String,
+    pub target_type: TargetType,
+    pub port: u16,
+    pub subdirectory: String,
+    pub full_url: String,
 }
 
 impl Display for UrlParser {
@@ -181,6 +199,7 @@ impl Error for UrlParserErrors {}
 ///
 /// # Example
 /// ```rust,ignore
+///
 /// let s = "https://example.com";
 /// let scheme = subslice!(s, ..5, UrlParserErrors::InvalidSize);
 /// ```
@@ -190,6 +209,20 @@ macro_rules! subslice {
     ($s:expr, $slice:expr, $err:expr) => {
         $s.get($slice).ok_or($err)?
     };
+}
+
+impl std::str::FromStr for UrlParser {
+    type Err = UrlParserErrors;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        UrlParser::new(s)
+    }
+}
+
+impl TryFrom<&str> for UrlParser {
+    type Error = UrlParserErrors;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        UrlParser::new(value)
+    }
 }
 
 impl UrlParser {
@@ -202,6 +235,17 @@ impl UrlParser {
     /// - The URL is empty
     ///
     /// # Example
+    ///  ///```
+    /// use stalkermap_core::utils::UrlParser;
+    ///
+    /// // Safe creation via `new`
+    /// let url = UrlParser::new("http://example.com").unwrap();
+    /// assert_eq!(url.full_url, "http://example.com");
+    ///
+    /// // Also usable via `parse` (FromStr) or `TryFrom`
+    /// let url2: UrlParser = "http://example.com".parse().unwrap();
+    /// let url3 = UrlParser::try_from("http://example.com").unwrap();
+    /// ```
 
     pub fn new(input_url: &str) -> Result<UrlParser, UrlParserErrors> {
         let url = input_url;
@@ -423,6 +467,36 @@ mod tests {
         assert_ne!(
             url.to_string(),
             "Scheme: https Target: [::1] Target type: ipv6 Port: 0 Sub directory: Full url: https://[::1]"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_direct_parse() {
+        let url = "https://example.com:33".parse::<UrlParser>().unwrap();
+        assert_eq!(format!("{}", url.scheme), "https");
+        assert_eq!(url.target, "example.com");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 33);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "https://example.com:33");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: https Target: example.com Target type: dns Port: 33 Sub directory: Full url: https://example.com:33"
+        );
+    }
+
+    #[test]
+    fn test_url_urlparser_direct_parse_try_from() {
+        let url = UrlParser::try_from("http://example.com").unwrap();
+        assert_eq!(format!("{}", url.scheme), "http");
+        assert_eq!(url.target, "example.com");
+        assert_eq!(format!("{}", url.target_type), "dns");
+        assert_eq!(url.port, 0);
+        assert_eq!(url.subdirectory, "");
+        assert_eq!(url.full_url, "http://example.com");
+        assert_ne!(
+            url.to_string(),
+            "Scheme: http Target: example.com Target type: dns Port: 0 Sub directory: Full url: https://example.com"
         );
     }
 
