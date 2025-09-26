@@ -162,7 +162,7 @@
 //! #### Alternative Creation Methods
 //!
 //! ```rust,no_run
-//! use stalkermap::utils::UrlParser;
+//! use stalkermap::utils::{UrlParser, DesiredType};
 //! use std::str::FromStr;
 //! use std::convert::TryFrom;
 //!
@@ -171,9 +171,12 @@
 //!
 //! // Method 2: Using FromStr
 //! let url2: UrlParser = "https://example.com".parse().unwrap();
+//! let ty: DesiredType = "u8".parse().unwrap();
 //!
 //! // Method 3: Using TryFrom
 //! let url3 = UrlParser::try_from("https://example.com").unwrap();
+//! let ty2 = DesiredType::try_from("u8").unwrap();
+//!
 //! ```
 //!
 //! #### URL Components

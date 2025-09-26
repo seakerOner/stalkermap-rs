@@ -77,8 +77,8 @@ use std::{error::Error, fmt::Display};
 pub enum Sanitize {
     MatchString(String),
     MatchStrings(Vec<String>),
-    IsType(DesiredType),
     IsBetween(isize, isize),
+    IsType(DesiredType),
 }
 
 /// Trait for input validation.  
@@ -230,6 +230,52 @@ pub enum DesiredType {
     I128,
     Isize,
 }
+
+impl std::str::FromStr for DesiredType {
+    type Err = DesiredTypeFromStrErr;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "String" => Ok(DesiredType::String),
+            "bool" => Ok(DesiredType::Bool),
+            "u8" => Ok(DesiredType::U8),
+            "u16" => Ok(DesiredType::U16),
+            "u32" => Ok(DesiredType::U32),
+            "u64" => Ok(DesiredType::U64),
+            "u128" => Ok(DesiredType::U128),
+            "i8" => Ok(DesiredType::I8),
+            "i16" => Ok(DesiredType::I16),
+            "i32" => Ok(DesiredType::I32),
+            "i64" => Ok(DesiredType::I64),
+            "i128" => Ok(DesiredType::I128),
+            "isize" => Ok(DesiredType::Isize),
+            s => Err(DesiredTypeFromStrErr::UnknownType(s.to_string())),
+        }
+    }
+}
+
+impl TryFrom<&str> for DesiredType {
+    type Error = DesiredTypeFromStrErr;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse::<DesiredType>()
+    }
+}
+
+#[derive(Debug)]
+pub enum DesiredTypeFromStrErr {
+    UnknownType(String),
+}
+
+impl Display for DesiredTypeFromStrErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnknownType(s) => {
+                write!(f, "The value {} is not available as a type, try again!", s)
+            }
+        }
+    }
+}
+
+impl Error for DesiredTypeFromStrErr {}
 
 impl DesiredType {
     /// Matches a [`DesiredType`] variant and applies the corresponding [`check_type!`] validation.
@@ -387,6 +433,24 @@ mod tests {
         assert!(filter.validate("15").is_ok());
         assert!(filter.validate("25").is_err()); // Over 20 
         assert!(filter.validate("-20").is_err()); // overflow
+    }
+
+    #[test]
+    fn test_sanitize_is_type_from_str() {
+        let filter = Sanitize::IsType("u8".parse::<DesiredType>().unwrap());
+        assert!(filter.validate("42").is_ok());
+        assert!(filter.validate("-42").is_err());
+        assert!(filter.validate("256").is_err()); // u8 max is 255
+        assert!(filter.validate("abc").is_err());
+    }
+
+    #[test]
+    fn test_sanitize_is_type_try_from_str() {
+        let filter = Sanitize::IsType(DesiredType::try_from("u8").unwrap());
+        assert!(filter.validate("42").is_ok());
+        assert!(filter.validate("-42").is_err());
+        assert!(filter.validate("256").is_err()); // u8 max is 255
+        assert!(filter.validate("abc").is_err());
     }
 
     #[test]
