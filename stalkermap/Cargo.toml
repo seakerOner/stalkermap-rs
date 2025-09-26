@@ -7,6 +7,6 @@ description = "A comprehensive Rust library for building CLI network scanner app
 repository = "https://github.com/seakerOner/stalkermap-rs"
 readme = "../README.md"
 keywords = ["network", "scanner", "cli", "validation", "url"]
-categories = ["network-programming", "command-line-utilities", "Development-tools"]
+categories = ["network-programming", "command-line-utilities", "Development-Tools"]
 
 [dependencies]
