@@ -66,7 +66,7 @@
 //! );
 //! println!("In range: {}", number.answer);
 //! ```
-use std::{fmt::Display, isize};
+use std::fmt::Display;
 
 /// Represents a validation filter that can be applied to user input.
 ///
@@ -83,43 +83,43 @@ pub enum Sanitize {
 
 /// Trait for input validation.  
 /// Any type that implements this can validate a string input and return
-/// either `Ok(())` if the input is valid or a [`FilterErrorMessage`] on failure.
+/// either `Ok(())` if the input is valid or a [`FilterErrorNot`] on failure.
 trait Validate {
-    fn validate(&self, input: &str) -> Result<(), FilterErrorMessage>;
+    fn validate(&self, input: &str) -> Result<(), FilterErrorNot>;
 }
 
 /// Represents an error that occurs when input validation fails.
 ///
 /// Each variant describes why the input was rejected:
-/// - [`NotNumber`]: could not parse as the expected numeric type.
-/// - [`NotString`]: could not parse as string.
-/// - [`NotBool`]: could not parse as boolean.
-/// - [`NotMatchString`]: did not match the required string.
-/// - [`NotMatchStrings`]: did not match any of the given options.
-/// - [`NotBetween`]: did not match between the values given.
+/// - [`Number`]: could not parse as the expected numeric type.
+/// - [`String`]: could not parse as string.
+/// - [`Bool`]: could not parse as boolean.
+/// - [`MatchString`]: did not match the required string.
+/// - [`MatchStrings`]: did not match any of the given options.
+/// - [`Between`]: did not match between the values given.
 #[derive(Debug)]
-pub(crate) enum FilterErrorMessage {
-    NotNumber(DesiredType),
-    NotString(DesiredType),
-    NotBool(DesiredType),
-    NotMatchString(String),
-    NotMatchStrings(Vec<String>),
-    NotBetween(isize, isize),
+pub(crate) enum FilterErrorNot {
+    Number(DesiredType),
+    String(DesiredType),
+    Bool(DesiredType),
+    MatchString(String),
+    MatchStrings(Vec<String>),
+    Between(isize, isize),
 }
 
-impl Display for FilterErrorMessage {
+impl Display for FilterErrorNot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotNumber(t) => write!(f, "The value is not a {}, try again!", t),
-            Self::NotString(t) => write!(f, "The value is not {}, try again!", t),
-            Self::NotBool(t) => write!(f, "The value is not a {}, try again!", t),
-            Self::NotMatchString(s) => write!(f, "The value doesn't match with {}, try again!", s),
-            Self::NotMatchStrings(v) => write!(
+            Self::Number(t) => write!(f, "The value is not a {}, try again!", t),
+            Self::String(t) => write!(f, "The value is not {}, try again!", t),
+            Self::Bool(t) => write!(f, "The value is not a {}, try again!", t),
+            Self::MatchString(s) => write!(f, "The value doesn't match with {}, try again!", s),
+            Self::MatchStrings(v) => write!(
                 f,
                 "The value doesn't match with the options: {}, try again!",
                 v.join(", ")
             ),
-            Self::NotBetween(n1, n2) => {
+            Self::Between(n1, n2) => {
                 write!(f, "The value is not between {} and {}, try again!", n1, n2)
             }
         }
@@ -138,9 +138,8 @@ impl Display for FilterErrorMessage {
 /// ```rust,ignore
 ///
 /// let input = "42";
-/// check_type!(input, u8, Err(FilterErrorMessage::NotNumber(DesiredType::U8)));
+/// check_type!(input, u8, Err(FilterErrorNot::Number(DesiredType::U8)));
 /// ```
-
 #[macro_export]
 macro_rules! check_type {
     ($input:expr, $t:ty, $err:expr) => {
@@ -157,10 +156,7 @@ impl Sanitize {
     /// - Trims whitespace before validation.
     /// - Stops and returns the first error encountered.
     /// - Returns the cleaned string if all filters pass.
-    pub(crate) fn execute(
-        answer: &str,
-        filters: &[Sanitize],
-    ) -> Result<String, FilterErrorMessage> {
+    pub(crate) fn execute(answer: &str, filters: &[Sanitize]) -> Result<String, FilterErrorNot> {
         let clean_answer = answer.trim();
 
         for filter in filters {
@@ -174,21 +170,21 @@ impl Sanitize {
 }
 
 impl Validate for Sanitize {
-    fn validate(&self, input: &str) -> Result<(), FilterErrorMessage> {
+    fn validate(&self, input: &str) -> Result<(), FilterErrorNot> {
         match self {
             Sanitize::IsType(ty) => ty.parse(input),
             Sanitize::MatchString(s) => {
                 if input == s {
                     Ok(())
                 } else {
-                    Err(FilterErrorMessage::NotMatchString(s.to_string()))
+                    Err(FilterErrorNot::MatchString(s.to_string()))
                 }
             }
             Sanitize::MatchStrings(options) => {
                 if options.contains(&input.to_string()) {
                     Ok(())
                 } else {
-                    Err(FilterErrorMessage::NotMatchStrings(options.clone()))
+                    Err(FilterErrorNot::MatchStrings(options.clone()))
                 }
             }
             Sanitize::IsBetween(n1, n2) => match DesiredType::Isize.parse(input) {
@@ -197,7 +193,7 @@ impl Validate for Sanitize {
                     if input_parsed >= *n1 && input_parsed <= *n2 {
                         Ok(())
                     } else {
-                        Err(FilterErrorMessage::NotBetween(*n1, *n2))
+                        Err(FilterErrorNot::Between(*n1, *n2))
                     }
                 }
                 Err(e) => Err(e),
@@ -248,75 +244,48 @@ impl DesiredType {
     ///
     /// desired.parse(input)? // succeeds if input parses as bool
     /// ```
-
-    fn parse(&self, input: &str) -> Result<(), FilterErrorMessage> {
+    fn parse(&self, input: &str) -> Result<(), FilterErrorNot> {
         match self {
             DesiredType::String => {
                 check_type!(
                     input,
                     String,
-                    Err(FilterErrorMessage::NotString(DesiredType::String))
+                    Err(FilterErrorNot::String(DesiredType::String))
                 )
             }
-            DesiredType::Bool => check_type!(
-                input,
-                bool,
-                Err(FilterErrorMessage::NotBool(DesiredType::Bool))
-            ),
-            DesiredType::U8 => check_type!(
-                input,
-                u8,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U8))
-            ),
-            DesiredType::U16 => check_type!(
-                input,
-                u16,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U16))
-            ),
-            DesiredType::U32 => check_type!(
-                input,
-                u32,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U32))
-            ),
-            DesiredType::U64 => check_type!(
-                input,
-                u64,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U64))
-            ),
-            DesiredType::U128 => check_type!(
-                input,
-                u128,
-                Err(FilterErrorMessage::NotNumber(DesiredType::U128))
-            ),
-            DesiredType::I8 => check_type!(
-                input,
-                i8,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I8))
-            ),
-            DesiredType::I16 => check_type!(
-                input,
-                i16,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I16))
-            ),
-            DesiredType::I32 => check_type!(
-                input,
-                i32,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I32))
-            ),
-            DesiredType::I64 => check_type!(
-                input,
-                i64,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I64))
-            ),
-            DesiredType::I128 => check_type!(
-                input,
-                i128,
-                Err(FilterErrorMessage::NotNumber(DesiredType::I128))
-            ),
+            DesiredType::Bool => {
+                check_type!(input, bool, Err(FilterErrorNot::Bool(DesiredType::Bool)))
+            }
+            DesiredType::U8 => check_type!(input, u8, Err(FilterErrorNot::Number(DesiredType::U8))),
+            DesiredType::U16 => {
+                check_type!(input, u16, Err(FilterErrorNot::Number(DesiredType::U16)))
+            }
+            DesiredType::U32 => {
+                check_type!(input, u32, Err(FilterErrorNot::Number(DesiredType::U32)))
+            }
+            DesiredType::U64 => {
+                check_type!(input, u64, Err(FilterErrorNot::Number(DesiredType::U64)))
+            }
+            DesiredType::U128 => {
+                check_type!(input, u128, Err(FilterErrorNot::Number(DesiredType::U128)))
+            }
+            DesiredType::I8 => check_type!(input, i8, Err(FilterErrorNot::Number(DesiredType::I8))),
+            DesiredType::I16 => {
+                check_type!(input, i16, Err(FilterErrorNot::Number(DesiredType::I16)))
+            }
+            DesiredType::I32 => {
+                check_type!(input, i32, Err(FilterErrorNot::Number(DesiredType::I32)))
+            }
+            DesiredType::I64 => {
+                check_type!(input, i64, Err(FilterErrorNot::Number(DesiredType::I64)))
+            }
+            DesiredType::I128 => {
+                check_type!(input, i128, Err(FilterErrorNot::Number(DesiredType::I128)))
+            }
             DesiredType::Isize => check_type!(
                 input,
                 isize,
-                Err(FilterErrorMessage::NotNumber(DesiredType::Isize))
+                Err(FilterErrorNot::Number(DesiredType::Isize))
             ),
         }
     }

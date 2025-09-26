@@ -92,7 +92,6 @@
 //! ```rust,no_run
 //! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
 //!
-//! fn main() {
 //!     // Get URL from user with validation
 //!     let url: UrlParser = loop {
 //!         let input = Terminal::ask(
@@ -109,7 +108,6 @@
 //!
 //!     println!("Full url:{}", url.full_url);
 //!     println!("{}", url);
-//! }
 //! ```
 //!
 //! ## Architecture

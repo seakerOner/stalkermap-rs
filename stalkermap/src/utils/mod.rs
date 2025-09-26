@@ -203,7 +203,6 @@
 //! ```rust,no_run
 //! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
 //!
-//! fn main() {
 //!    let url = loop {
 //!       // Get URL from user with validation
 //!       let input = Terminal::ask(
@@ -217,7 +216,6 @@
 //!          Err(e) => eprintln!("{}", e)
 //!       }
 //!    };
-//! }
 //! ```
 //!
 //! ## Advanced Usage Patterns
@@ -275,7 +273,6 @@
 //! - Standard library only for most functionality
 //! - No external HTTP clients or networking libraries
 //! - Pure Rust implementation for maximum compatibility
-
 pub mod sanitize;
 pub use sanitize::{DesiredType, Sanitize};
 

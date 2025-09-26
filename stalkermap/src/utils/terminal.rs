@@ -60,10 +60,8 @@
 //! );
 //! println!("The input: {}", input.answer);
 //! ```
-
 use crate::utils::sanitize::Sanitize;
 use std::io;
-
 /// A helper for repeatedly asking the user for input until it passes all [`Sanitize`] filters.  
 ///
 /// # Examples
@@ -114,7 +112,7 @@ impl Terminal {
 
             match io::stdin().read_line(&mut answer) {
                 Ok(_) => {
-                    let sanatized_answer = Sanitize::execute(answer.as_str(), &filters);
+                    let sanatized_answer = Sanitize::execute(answer.as_str(), filters);
 
                     match sanatized_answer {
                         Ok(data) => break data,

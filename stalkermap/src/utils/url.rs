@@ -27,7 +27,6 @@
 //! // Note: `From<&str>` is intentionally not implemented, because parsing may fail.
 //! // Users should use `new`, `parse`, or `TryFrom` for safe URL creation.
 //! ```
-
 use std::str::FromStr;
 use std::{
     error::Error,
@@ -203,7 +202,6 @@ impl Error for UrlParserErrors {}
 /// let s = "<https://example.com>";
 /// let scheme = subslice!(s, ..5, UrlParserErrors::InvalidSize);
 /// ```
-
 #[macro_export]
 macro_rules! subslice {
     ($s:expr, $slice:expr, $err:expr) => {
@@ -246,7 +244,6 @@ impl UrlParser {
     /// let url2: UrlParser = "<http://example.com>".parse().unwrap();
     /// let url3 = UrlParser::try_from("<http://example.com>").unwrap();
     /// ```
-
     pub fn new(input_url: &str) -> Result<UrlParser, UrlParserErrors> {
         let url = input_url;
 
@@ -313,27 +310,24 @@ impl UrlParser {
         let port: u16 = {
             if quant_to_skip >= url.len() {
                 0
-            } else {
-                if url
+            } else if url
+                .chars()
+                .nth(quant_to_skip)
+                .ok_or(UrlParserErrors::InvalidSize)?
+                == ':'
+            {
+                let string_port_temp: String = url
                     .chars()
-                    .nth(quant_to_skip)
-                    .ok_or(UrlParserErrors::InvalidSize)?
-                    == ':'
-                {
-                    let string_port_temp: String = url
-                        .chars()
-                        .skip(quant_to_skip + 1)
-                        .take_while(|v| v.is_ascii_digit())
-                        .collect();
+                    .skip(quant_to_skip + 1)
+                    .take_while(|v| v.is_ascii_digit())
+                    .collect();
 
-                    let valid_port = match string_port_temp.parse::<u16>() {
-                        Ok(port) => port,
-                        Err(_) => return Err(UrlParserErrors::InvalidPort),
-                    };
-                    valid_port
-                } else {
-                    0
+                match string_port_temp.parse::<u16>() {
+                    Ok(port) => port,
+                    Err(_) => return Err(UrlParserErrors::InvalidPort),
                 }
+            } else {
+                0
             }
         };
 
