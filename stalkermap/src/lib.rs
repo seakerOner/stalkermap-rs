@@ -161,3 +161,5 @@
 //! See [CHANGELOG.md](https://github.com/seakerOner/stalkermap-rs/blob/master/CHANGELOG.md) for a list of changes and version history.
 
 pub mod utils;
+
+pub mod dns;
