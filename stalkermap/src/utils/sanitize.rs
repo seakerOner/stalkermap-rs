@@ -66,7 +66,7 @@
 //! );
 //! println!("In range: {}", number.answer);
 //! ```
-use std::fmt::Display;
+use std::{error::Error, fmt::Display};
 
 /// Represents a validation filter that can be applied to user input.
 ///
@@ -125,6 +125,8 @@ impl Display for FilterErrorNot {
         }
     }
 }
+
+impl Error for FilterErrorNot {}
 
 /// Macro helper that validates if an input string can be parsed into the given Rust type.  
 /// Expands into a `Result<(), expr>`.
