@@ -253,6 +253,27 @@ impl std::str::FromStr for DesiredType {
     }
 }
 
+/// Allows fallible conversion from a `&str` into a [`DesiredType`].
+///
+/// This is a convenience wrapper around the [`FromStr`] implementation,
+/// letting you use `DesiredType::try_from("...")` instead of
+/// `"..."`.parse::<DesiredType>().
+///
+/// # Errors
+/// Returns [`DesiredTypeFromStrErr::UnknownType`] if the input string
+/// does not match any valid [`DesiredType`].
+///
+/// # Example
+/// ```rust,no_run
+/// use stalkermap::utils::sanitize::{DesiredType, DesiredTypeFromStrErr};
+/// use std::convert::TryFrom;
+///
+/// let t = DesiredType::try_from("u8").unwrap();
+/// assert!(matches!(t, DesiredType::U8));
+///
+/// let err = DesiredType::try_from("banana");
+/// assert!(matches!(err, Err(DesiredTypeFromStrErr::UnknownType(_))));
+/// ```
 impl TryFrom<&str> for DesiredType {
     type Error = DesiredTypeFromStrErr;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
@@ -260,11 +281,44 @@ impl TryFrom<&str> for DesiredType {
     }
 }
 
+/// Error type returned when parsing a [`DesiredType`] from a string fails.
+///
+/// This is used by the [`FromStr`] and [`TryFrom<&str>`] implementations
+/// of [`DesiredType`].
+///
+/// # Variants
+/// - [`UnknownType`]: the provided string did not match any known [`DesiredType`].
+///
+/// # Example
+/// ```rust,no_run
+/// use stalkermap::utils::sanitize::{DesiredType, DesiredTypeFromStrErr};
+/// use std::str::FromStr;
+///
+/// let res = DesiredType::from_str("banana");
+/// assert!(matches!(res, Err(DesiredTypeFromStrErr::UnknownType(_))));
+/// ```
 #[derive(Debug)]
 pub enum DesiredTypeFromStrErr {
+    /// The provided string does not correspond to any valid [`DesiredType`].
     UnknownType(String),
 }
 
+/// Implements a human-readable description of the [`DesiredTypeFromStrErr`] error.
+///
+/// This is mainly used for displaying friendly messages when invalid
+/// type names are provided by the user.
+///
+/// # Example
+/// ```rust
+/// use stalkermap::utils::sanitize::{DesiredType, DesiredTypeFromStrErr};
+/// use std::str::FromStr;
+///
+/// let err = DesiredType::from_str("banana").unwrap_err();
+/// assert_eq!(
+///     format!("{}", err),
+///     "The value banana is not available as a type, try again!"
+/// );
+/// ```
 impl Display for DesiredTypeFromStrErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -275,6 +329,13 @@ impl Display for DesiredTypeFromStrErr {
     }
 }
 
+/// Marker implementation that allows [`DesiredTypeFromStrErr`] to integrate with
+/// the standard [`std::error::Error`] trait ecosystem.
+///
+/// This enables the use of the `?` operator with functions that return
+/// `Result<T, Box<dyn Error>>` or similar.
+///
+/// No extra functionality is added here.
 impl Error for DesiredTypeFromStrErr {}
 
 impl DesiredType {

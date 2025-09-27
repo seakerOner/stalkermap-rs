@@ -28,8 +28,8 @@ struct QuestionsSection {
 
 #[derive(Debug)]
 struct AnswerSection {
-    name: String,
-    ty: u16,
+    owner: String,
+    record_type: u16,
     class: u16,
     ttl: u32,
     rd_length: u16,
