@@ -37,7 +37,7 @@ struct QuestionsSection {
     name: String,
     /// The type of DNS record being requested (e.g., A, AAAA, MX).
     record_type: u16,
-    /// The class of the DNS record (usually IN for Internet, or Chaos).
+    /// The class of the DNS record (usually IN for Internet, or CH for Chaos).
     class: u16,
 }
 
@@ -90,4 +90,19 @@ struct AdditionalSection {
     rd_length: u16,
     /// The actual resource data (e.g., additional IP information).
     r_data: String,
+}
+
+enum RecordType {
+    A = 1,
+    Ns = 2,
+    Cname = 5,
+    Soa = 6,
+    Ptr = 12,
+    Hinfo = 13,
+    Mx = 15,
+    Txt = 16,
+    Aaaa = 28,
+    Srv = 33,
+    Naptr = 35,
+    Caa = 257,
 }
