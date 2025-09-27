@@ -255,9 +255,9 @@ impl std::str::FromStr for DesiredType {
 
 /// Allows fallible conversion from a `&str` into a [`DesiredType`].
 ///
-/// This is a convenience wrapper around the [`FromStr`] implementation,
+/// This is a convenience wrapper around the `FromStr` implementation,
 /// letting you use `DesiredType::try_from("...")` instead of
-/// `"..."`.parse::<DesiredType>().
+/// `"..."`.`parse::<DesiredType>`().
 ///
 /// # Errors
 /// Returns [`DesiredTypeFromStrErr::UnknownType`] if the input string
@@ -283,11 +283,11 @@ impl TryFrom<&str> for DesiredType {
 
 /// Error type returned when parsing a [`DesiredType`] from a string fails.
 ///
-/// This is used by the [`FromStr`] and [`TryFrom<&str>`] implementations
+/// This is used by the `FromStr` and [`TryFrom<&str>`] implementations
 /// of [`DesiredType`].
 ///
 /// # Variants
-/// - [`UnknownType`]: the provided string did not match any known [`DesiredType`].
+/// - `UnknownType`: the provided string did not match any known [`DesiredType`].
 ///
 /// # Example
 /// ```rust,no_run
