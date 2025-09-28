@@ -5,4 +5,5 @@ edition = "2024"
 publish = false
 
 [dependencies]
-stalkermap = { path = "../stalkermap" }
+stalkermap = { path = "../stalkermap", features = ["std", "tokio-dep", "agnostic"] }
+tokio = "1.47.1"
