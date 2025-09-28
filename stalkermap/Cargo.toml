@@ -10,3 +10,11 @@ keywords = ["network", "scanner", "cli", "validation", "url"]
 categories = ["network-programming", "command-line-utilities", "development-tools"]
 
 [dependencies]
+tokio = { version = "1.47.1", optional = true, features = ["full"]}
+
+[features]
+default = ["std"]
+std = []
+tokio-dep = ["tokio"]
+agnostic = []
+

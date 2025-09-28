@@ -1,20 +1,19 @@
 //! DNS RFC roadmap — quick checklist
 //!
-//! Agnostic version:
-//!     • Only parsing, encoding/decoding of DNS messages and helpers.
-//!     • No dependency on an executor or transport; the user chooses.
-//!     • Fast to implement, lightweight, ideal for advanced and custom usage.
+//! - Agnostic version:
+//!   - Only parsing, encoding/decoding of DNS messages and helpers.
+//!   - No dependency on an executor or transport; the user chooses.
+//!   - Fast to implement, lightweight, ideal for advanced and custom usage.
 //!
-//! Default version (std):
-//!     • Implements blocking TCP/UDP transport using std::net.
-//!     • Basic full functionality, easy to maintain.
-//!     • Ideal for users who want simplicity and do not need async.
+//! - Default version (std):
+//!   - Implements blocking TCP/UDP transport using std::net.
+//!   - Basic full functionality, easy to maintain.
+//!   - Ideal for users who want simplicity and do not need async.
 //!
-//! Tokio version (async):
-//!     • Replaces blocking transport with tokio::net for async TCP/UDP.
-//!     • Allows implementing RFC-inspired behaviors (TCP fallback, EDNS, retries, etc.) in a non-blocking way.
-//!     • Can include opinionated helpers that speed up scanner development.
-//!     
+//! - Tokio version (async):
+//!   - Replaces blocking transport with tokio::net for async TCP/UDP.
+//!   - Allows implementing RFC-inspired behaviors (TCP fallback, EDNS, retries, etc.) in a non-blocking way.
+//!   - Can include opinionated helpers that speed up scanner development.
 //!
 //! Use this as the authoritative roadmap for implementing a robust DNS resolver
 //! (aimed at pentesting / network scanning use cases). Link targets point to the
@@ -104,5 +103,5 @@
 //! Further reading / authoritative sources:
 //! - RFC Editor (rfc-editor.org) — canonical RFC documents.
 //! - IETF Datatracker (datatracker.ietf.org) — drafts, working group pages, and status for SVCB/HTTPS and other evolving specs.
+pub mod compressor;
 pub mod resolver;
-
