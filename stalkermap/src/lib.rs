@@ -3,26 +3,56 @@
 //! A comprehensive Rust library for building CLI network scanner applications with robust input validation,
 //! terminal interaction, and URL parsing capabilities.
 //!
-//! ## Overview
-//!
-//! StalkerMap provides the foundational utilities needed to create interactive command-line
-//! network scanning tools. The library emphasizes safety, performance, and ease of use through
-//! Rust's type system and zero-dependency design.
-//!
 //! ## Features
 //!
-//!  Currently Available
+//! - For advanced users: see docs for **dns::resolver::agnostic** and **dns::compressor::agnostic**
 //!
+//! ### Currently Available
+//!
+//! (All feature versions)
 //! - **Input Sanitization & Validation** - Type-safe input validation with composable filters
 //! - **Interactive Terminal Interface** - User-friendly CLI input with validation loops
 //! - **URL Parsing** - Comprehensive HTTP/HTTPS URL parsing with host validation
 //!
-//!  Planned Features
+//! ("Agnostic" feature)
+//! - **DNS message structure** - With encoder helpers (Following the RFC1035)
+//! - **DNS message compressor** - For hostnames (Following the RFC1035)
+//!
+//! ### Work in progress
+//!
+//! (All feature versions)
+//! - Inside the dns module file you will see a roadmap of features I might implement, subject to change
+//! - A transporter to send the dns messages
+//!
+//! ("std" and "tokio-dep" features)
+//! - **DNS Resolver** - Higher-level dns queries (planned)
+//!
+//!  ### Planned Features
 //!
 //! - **DNS Queries** - Resolve hostnames and perform DNS lookups
 //! - **Port Scanning** - Efficient port scanning with customizable options
 //! - **Directory Enumeration** - Web directory and file discovery
 //! - **Report Generation** - Export scan results to various formats
+//!
+//! ## Feature Variants
+//!
+//! - **Agnostic version**
+//!   - Only parsing, encoding/decoding of DNS messages and helpers.  
+//!   - No executor or transport included — user chooses their own.  
+//!   - Fast to integrate, lightweight, perfect for advanced/custom usage.
+//!
+//! - **Default (`std`) version**
+//!   - Blocking TCP/UDP transport using `std::net`.  
+//!   - Basic fully functional implementation, easy to maintain.  
+//!   - Ideal for users who want simplicity and don’t need async.
+//!   - **Note:** Network features are not yet implemented; they require additional abstractions for ease of use and it takes time.
+//!
+//!
+//! - **Tokio (`async`) version**
+//!   - Replaces blocking transport with `tokio::net` for async TCP/UDP.  
+//!   - Supports non-blocking behaviors inspired by RFCs (TCP fallback, EDNS, retries, etc.).  
+//!   - Can include opinionated helpers to accelerate scanner development.
+//!   - **Note:** Network features are not yet implemented (same reason as above).
 //!
 //! ## Quick Start
 //!
@@ -30,7 +60,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! stalkermap = "0.1.0"
+//! stalkermap = { version = "0.1.0", features = ["std"]}
+//! stalkermap = { version = "0.1.0", features = ["tokio-dep"]}
+//! stalkermap = { version = "0.1.0", default-features = false, features = ["agnostic"]}
 //! ```
 //!
 //! ## Usage Examples
@@ -110,6 +142,28 @@
 //!     println!("{}", url);
 //! ```
 //!
+//! ### "Agnostic" Only Feature DNS Compressor Example
+//!
+//! Users can either build a DNS message manually using their own structures
+//! or use the `DnsMessage` struct provided by this library. Example with a raw buffer:
+//!
+//! ```rust,no_run
+//! # #[cfg(feature = "agnostic")]
+//! # {
+//! use std::collections::HashMap;
+//! use stalkermap::dns::compressor::MessageCompressor;
+//!
+//! let mut message = Vec::new();
+//! let mut pointer_map = HashMap::new();
+//!
+//! // Compress a domain name
+//! MessageCompressor::compress("www.example.com", &mut message, &mut pointer_map).unwrap();
+//!
+//! // Reusing the same domain (or suffix) inserts a pointer instead of repeating bytes
+//! MessageCompressor::compress("mail.example.com", &mut message, &mut pointer_map).unwrap();
+//! # }
+//! ```
+//!
 //! ## Architecture
 //!
 //! The library is designed with modularity and composability in mind:
@@ -161,4 +215,5 @@
 //! See [CHANGELOG.md](https://github.com/seakerOner/stalkermap-rs/blob/master/CHANGELOG.md) for a list of changes and version history.
 
 pub mod dns;
+
 pub mod utils;

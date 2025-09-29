@@ -1,9 +1,40 @@
-//use crate::dns::resolver::DnsMessage;
+//! DNS Message Compressor (Agnostic Usage)
+//!
+//! This struct provides a low-level, RFC1035-compliant mechanism for compressing
+//! domain names within DNS messages. It is designed to be agnostic of any specific
+//! DNS message struct, allowing users to integrate it with their own message construction logic
+//! or with the `DnsMessage` struct provided by this library.
+//!
+//! # Overview
+//!
+//! In DNS, domain names can be repeated multiple times in a message (e.g., in
+//! questions, answers, authority, and additional sections). To reduce message
+//! size, RFC1035 §4.1.4 defines a compression scheme:
+//!
+//! - A domain name, or any suffix of a domain name, can be replaced with a
+//!   2-byte pointer to a previous occurrence of the same name in the message.
+//! - The pointer is encoded as a 16-bit value where:
+//!   - The top two bits are `11`
+//!
+//!   - The lower 14 bits represent the offset from the start of the message
+//! - This compressor builds the message incrementally:
+//! 1. The `message` buffer is updated with the compressed domain name bytes.
+//! 2. The `pointer_map` keeps track of each suffix and its offset in the buffer,
+//!    allowing reuse of previous labels with pointers.
+//! 3. Each label is validated against DNS limits (63 bytes per label, 255 bytes
+//!    per full domain name). Errors are returned if limits are exceeded.
+//!
+//! # Usage
+//!
+//! Users can either build a DNS message manually using their own structures
+//! or use the `DnsMessage` struct provided by this library. Example with a raw buffer:
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub(crate) struct MessageCompressor {}
 
+#[allow(dead_code)]
 impl MessageCompressor {
     /// Reference to RFC1035, page 30 (4.1.4)
     ///

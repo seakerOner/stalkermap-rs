@@ -13,7 +13,7 @@ categories = ["network-programming", "command-line-utilities", "development-tool
 tokio = { version = "1.47.1", optional = true, features = ["full"]}
 
 [features]
-default = ["std"]
+default = []
 std = []
 tokio-dep = ["tokio"]
 agnostic = []

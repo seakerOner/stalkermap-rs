@@ -66,7 +66,7 @@
 //!     <https://www.rfc-editor.org/rfc/rfc4035.html>
 //!   - RFC 5155 — DNSSEC NSEC3 (hashed authenticated denial of existence).
 //!     <https://www.rfc-editor.org/rfc/rfc5155.html>
-//!   (Implement these if you need to validate responses cryptographically — highly recommended for security-focused tooling.)
+//!   - (Implement these if you need to validate responses cryptographically — highly recommended for security-focused tooling.)
 //!
 //! NICE-TO (privacy transports, mitigation, and newer RRs)
 //! - Privacy transports:
@@ -76,7 +76,7 @@
 //!     <https://www.rfc-editor.org/rfc/rfc7858.html>
 //!   - RFC 9250 — DNS over QUIC (DoQ).
 //!     <https://www.rfc-editor.org/rfc/rfc9250.html>
-//!   (If you want privacy-preserving transport options for queries; useful for stealthy/modern tooling.)
+//!   - (If you want privacy-preserving transport options for queries; useful for stealthy/modern tooling.)
 //!
 //! - RFC 7873 — DNS Cookies.
 //!   <https://www.rfc-editor.org/rfc/rfc7873.html>
@@ -86,11 +86,11 @@
 //!   - TLSA (DANE): <https://www.rfc-editor.org/rfc/rfc6698.html>
 //!   - CAA: <https://www.rfc-editor.org/rfc/rfc8659.html>
 //!   - SVCB / HTTPS: see IETF datatracker/search for the latest draft → (links change while draft evolves).
-//!   (Specialized records that are useful for scanning modern services — implement if you want wide coverage.)
+//!   - (Specialized records that are useful for scanning modern services — implement if you want wide coverage.)
 //!
 //! - QNAME minimisation and related privacy best-practices (RFCs & drafts).
 //!   <https://www.rfc-editor.org/search/rfc?q=qname+minimisation>
-//!   (Privacy guidance to avoid over-sharing query names to upstream servers — worth adopting for ethical scanning.)
+//! - (Privacy guidance to avoid over-sharing query names to upstream servers — worth adopting for ethical scanning.)
 //!
 //! NOTES & IMPLEMENTATION STRATEGY
 //! - Start with RFC 1034 / 1035 / 2181 to cover message format, name rules and core behavior.
@@ -103,5 +103,10 @@
 //! Further reading / authoritative sources:
 //! - RFC Editor (rfc-editor.org) — canonical RFC documents.
 //! - IETF Datatracker (datatracker.ietf.org) — drafts, working group pages, and status for SVCB/HTTPS and other evolving specs.
-pub mod compressor;
 pub mod resolver;
+
+#[cfg(any(feature = "std", feature = "tokio-dep"))]
+mod compressor;
+
+#[cfg(feature = "agnostic")]
+pub mod compressor;

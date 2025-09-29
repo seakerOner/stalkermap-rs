@@ -1,62 +1,72 @@
-//! # Stalkermap DNS Resolver
+//! # Stalkermap DNS Resolver – Agnostic Mode
 //!
-//! This module defines the basic data structures for representing a DNS message.
-//! It includes the header and the main sections (question, answer, authority, additional).
-//! These structs can be used to build, parse, and inspect DNS messages
-use super::compressor::MessageCompressor;
+//! This module provides the building blocks for working with DNS messages in an **agnostic** way.
+//! Users can construct, encode, parse, and inspect DNS messages manually, without relying on
+//! a fully featured resolver. It is intended for advanced use cases where you need fine-grained
+//! control over message construction.
+//!
+//! This feature allows you to:
+//! - Build DNS messages using the `DnsMessage` struct.
+//! - Encode headers, questions, answers, authority, and additional sections.
+//! - Encode and decode DNS header flags via `DnsHeaderFlags`.
+//! - Work with DNS record types using `RecordType`.
+//!
+//! You can either construct your own `DnsMessage` structure or use helper structs provided
+//! in this module. For example, `MessageCompressor` from the library can be used in combination
+//! with this module to apply RFC1035-compliant name compression.
 
-/// Represents a full DNS message, including header and all sections.
+/// Represents a complete DNS message, including header and all four sections.
+///
+/// This struct is fully agnostic: you can construct it manually, populate fields,
+/// and encode it using helper functions or your own routines.
 #[derive(Debug)]
-pub(crate) struct DnsMessage {
-    header: HeaderSection,
+pub struct DnsMessage {
+    pub header: HeaderSection,
     // The question for the name server
-    question: QuestionSection,
+    pub question: QuestionSection,
     // RRs answering the question
-    answer: AnswerSection,
+    pub answer: AnswerSection,
     // RRs pointing toward an authority
-    authority: AuthoritySection,
+    pub authority: AuthoritySection,
     // RRs holding additional information
-    additional: AdditionalSection,
-}
-
-impl DnsMessage {
-    fn new(self) {}
+    pub additional: AdditionalSection,
 }
 
 /// Represents the header section of a DNS message.
+///
+/// The header contains an ID, flags, and counts for each section
 #[derive(Debug)]
-struct HeaderSection {
+pub struct HeaderSection {
     /// Identifier to match requests and responses.
-    id: u16,
+    pub id: u16,
     /// Flags and control bits for the DNS message.
-    /// Use [`DnsHeaderFlags`]
-    flags: u16,
+    pub flags: u16, // Use `DnsHeaderFlags` for structured access
     /// Number of entries in the question section.
-    qd_count: u16,
+    pub qd_count: u16,
     /// Number of resource records in the answer section.
-    an_count: u16,
+    pub an_count: u16,
     /// Number of name server records in the authority section.
-    ns_count: u16,
+    pub ns_count: u16,
     /// Number of resource records in the additional section.
-    ar_count: u16,
+    pub ar_count: u16,
 }
 
-/// Represents the 16-bit DNS flags field (RFC 1035 §4.1.1).
+/// Structured representation of the 16-bit DNS flags field (RFC1035 §4.1.1)
 #[derive(Debug, Clone, Copy)]
-struct DnsHeaderFlags {
-    qr: bool,
-    opcode: u8,
-    aa: bool,
-    tc: bool,
-    rd: bool,
-    ra: bool,
-    z: u8,
-    rcode: u8,
+pub struct DnsHeaderFlags {
+    pub qr: bool,
+    pub opcode: u8,
+    pub aa: bool,
+    pub tc: bool,
+    pub rd: bool,
+    pub ra: bool,
+    pub z: u8,
+    pub rcode: u8,
 }
 
 impl DnsHeaderFlags {
-    /// Encode the flags into a 16-bit integer.
-    fn to_u16(&self) -> u16 {
+    /// Encode the structured flags into a 16-bit integer.
+    pub fn to_u16(&self) -> u16 {
         ((self.qr as u16) << 15)
             | ((self.opcode as u16 & 0b1111) << 11)
             | ((self.aa as u16) << 10)
@@ -67,7 +77,7 @@ impl DnsHeaderFlags {
             | (self.rcode as u16 & 0b1111)
     }
     /// Decode from a 16-bit integer into structured flags.
-    fn from_u16(value: u16) -> Self {
+    pub fn from_u16(value: u16) -> Self {
         Self {
             qr: (value >> 15) & 1 != 0,
             opcode: ((value >> 11) & 0b1111) as u8,
@@ -81,68 +91,69 @@ impl DnsHeaderFlags {
     }
 }
 
+/// Represents a question section in a DNS message.
 #[derive(Debug)]
-struct QuestionSection {
+pub struct QuestionSection {
     /// The domain name being queried.
-    name: String,
+    pub name: String,
     /// The type of DNS record being requested (e.g., A, AAAA, MX).
-    record_type: u16,
+    pub record_type: u16,
     /// The class of the DNS record (usually IN for Internet, or CH for Chaos).
-    class: u16,
+    pub class: u16,
 }
 
 /// Represents a single answer record in a DNS message.
 /// All RRs (resource records) have the same top level format shown.
 #[derive(Debug)]
-struct AnswerSection {
+pub struct AnswerSection {
     /// The domain name that owns this record.
-    owner_name: String,
+    pub owner_name: String,
     /// The type of DNS record (e.g., A, AAAA, CNAME).
-    record_type: u16,
+    pub record_type: u16,
     /// The class of the DNS record (usually IN).
-    class: u16,
+    pub class: u16,
     /// Time-to-live of the record in seconds.
-    ttl: i32,
+    pub ttl: i32,
     /// Length of the RDATA field.
-    rd_length: u16,
+    pub rd_length: u16,
     /// The actual resource data (e.g., IP address for A record).
-    r_data: String,
+    pub r_data: String,
 }
 
 /// Represents a single authority record in a DNS message.
 /// All RRs (resource records) have the same top level format shown.
 #[derive(Debug)]
-struct AuthoritySection {
+pub struct AuthoritySection {
     /// The domain name that owns this record.
-    owner_name: String,
+    pub owner_name: String,
     /// The type of DNS record.
-    record_type: u16,
+    pub record_type: u16,
     /// The class of the DNS record.
-    class: u16,
+    pub class: u16,
     /// Time-to-live of the record in seconds.
-    ttl: u32,
+    pub ttl: u32,
     /// Length of the RDATA field.
-    rd_length: u16,
+    pub rd_length: u16,
     /// The actual resource data (e.g., authoritative name server).
-    r_data: String,
+    pub r_data: String,
 }
 
 /// Represents a single additional record in a DNS message.
 /// All RRs (resource records) have the same top level format shown.
 #[derive(Debug)]
-struct AdditionalSection {
+pub struct AdditionalSection {
     /// The domain name that owns this record.
-    owner_name: String,
+    pub owner_name: String,
     /// The type of DNS record.
-    record_type: u16,
+    pub record_type: u16,
     /// The class of the DNS record.
-    class: u16,
+    pub class: u16,
     /// Time-to-live of the record in seconds.
-    ttl: u32,
+    pub ttl: u32,
     /// Length of the RDATA field.
-    rd_length: u16,
+    pub rd_length: u16,
     /// The actual resource data (e.g., additional IP information).
-    r_data: String,
+    pub r_data: String,
 }
 
 /// TYPE fields are used in resource records.  Note that these types are a subset of QTYPEs.
@@ -151,11 +162,11 @@ struct AdditionalSection {
 ///
 /// # Example
 /// ```rust,no_run
-/// //use stalkermap::dns::resolver::RecordType;
+/// use stalkermap::dns::resolver::RecordType;
 ///
-/// //let record_type = RecordType::A.to_bytes();
+/// let record_type = RecordType::A.to_bytes();
 /// ```
-enum RecordType {
+pub enum RecordType {
     // A host address
     A = 1,
     // An authoritative name server
@@ -183,7 +194,8 @@ enum RecordType {
 }
 
 impl RecordType {
-    fn to_bytes(self) -> [u8; 2] {
+    /// Encode the record type as a 2-byte big-endian value.
+    pub fn to_bytes(self) -> [u8; 2] {
         (self as u16).to_be_bytes()
     }
 }
