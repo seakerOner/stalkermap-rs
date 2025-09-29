@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Report generation (JSON, XML, CSV)
 
 ## [0.1.1] - 29-09-2025
+
 ### Added 
 - (All versions)
   - Enhanced `DesiredType` in Utils by implementing `FromStr` and `TryFrom` traits
@@ -25,6 +26,7 @@ All notable changes to this project will be documented in this file.
   - All new features in the "agnostic" version are internal; they will be abstracted in `std` and `tokio-dep` versions for simpler usage
 
 ## [0.1.0] - 26-09-2025
+
 ### Added
 - Input validation with `Sanitize` enum
   - Type checking for primitives (`DesiredType`)
