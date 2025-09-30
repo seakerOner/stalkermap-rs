@@ -6,6 +6,7 @@
 //! ## Features
 //!
 //! - For advanced users: see docs for **dns::resolver::agnostic** and **dns::compressor::agnostic**
+//! - The current release provides message construction and encoding. Decoding and message transport helpers are planned for a future release.
 //!
 //! ### Currently Available
 //!
@@ -164,6 +165,23 @@
 //! # }
 //! ```
 //!
+//! ### "Agnostic" Only Feature DNS Message Query Builder Example
+//!
+//!  ```rust,no_run
+//! # #[cfg(feature = "agnostic")]
+//! # {
+//! use stalkermap::dns::resolver::agnostic::{DnsMessage, RecordType, OpCodeOptions};
+//!
+//! // Build a query for example.com A record
+//! let msg = DnsMessage::new_query("example.com", RecordType::A, OpCodeOptions::StandardQuery);
+//!
+//! // Encode into raw bytes, ready to send via UDP/TCP
+//! let bytes = msg.encode_query();
+//!
+//! assert!(bytes.len() > 12); // includes header + question
+//! # }
+//! ```
+//!
 //! ## Architecture
 //!
 //! The library is designed with modularity and composability in mind:
@@ -175,7 +193,6 @@
 //!
 //! ## Design Principles
 //!
-//! - **Zero Dependencies** - Uses only Rust standard library for maximum compatibility
 //! - **Type Safety** - Leverages Rust's type system for compile-time guarantees
 //! - **Error Handling** - Comprehensive error types with descriptive messages
 //! - **Performance** - Optimized for speed and memory efficiency

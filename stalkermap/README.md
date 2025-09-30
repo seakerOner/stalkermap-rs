@@ -10,6 +10,8 @@ A comprehensive Rust library for building CLI network scanner applications with 
 
 - For advanced users: see docs for **dns::resolver::agnostic** and **dns::compressor::agnostic**
 
+- The current release provides message construction and encoding. Decoding and message transport helpers are planned for a future release.
+
 ### Currently Available
 
 (All feature versions)
@@ -158,11 +160,25 @@ fn main() {
  let mut message = Vec::new();
  let mut pointer_map = HashMap::new();
 
- Compress a domain name
+ // Compress a domain name
  MessageCompressor::compress("www.example.com", &mut message, &mut pointer_map).unwrap();
 
  // Reusing the same domain (or suffix) inserts a pointer instead of repeating bytes
  MessageCompressor::compress("mail.example.com", &mut message, &mut pointer_map).unwrap();
+ ```
+
+ ### "Agnostic" Only Feature DNS Message Query Builder Example
+
+ ```rust,no_run
+ use stalkermap::dns::resolver::agnostic::{DnsMessage, RecordType, OpCodeOptions};
+
+ // Build a query for example.com A record
+ let msg = DnsMessage::new_query("example.com", RecordType::A, OpCodeOptions::StandardQuery);
+
+ // Encode into raw bytes, ready to send via UDP/TCP
+ let bytes = msg.encode_query();
+
+ assert!(bytes.len() > 12); // includes header + question
  ```
 
 ## Architecture

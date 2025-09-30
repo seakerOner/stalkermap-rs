@@ -10,6 +10,24 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
+## [0.1.2] - 30-09-2025
+### Added 
+The current release provides message construction and encoding. Decoding and message transport helpers are planned for a future release.
+- (All versions)
+  - Expanded internal documentation across DNS message types and helpers
+  - Unit tests for record encoding/decoding and header flag conversions
+- ("Agnostic" feature)
+  - `DnsMessage::new_query` for constructing standard queries
+  - `DnsMessage::encode_query` for serializing queries into raw bytes
+  - `DnsHeaderFlags` with encode/decode helpers
+  - `RecordType` enum with `to_bytes` encoding
+  - Additional resource record structs: `AnswerSection`, `AuthoritySection`, `AdditionalSection`
+
+### Technical Notes
+- Introduced `rand` dependency to generate random 16-bit DNS IDs
+- Internal API stability note:
+  While exposed under the `agnostic` feature, low-level DNS types are considered advanced APIs and may change in minor versions
+
 ## [0.1.1] - 29-09-2025
 
 ### Added 

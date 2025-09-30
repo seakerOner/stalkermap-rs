@@ -12,12 +12,12 @@ mod standard;
 #[cfg(feature = "agnostic")]
 pub use self::agnostic::{
     AdditionalSection, AnswerSection, AuthoritySection, DnsHeaderFlags, DnsMessage, HeaderSection,
-    QuestionSection, RecordType,
+    OpCodeOptions, QuestionSection, RecordType, generate_id,
 };
 
 #[cfg(any(feature = "std", feature = "tokio-dep"))]
 #[allow(unused_imports)]
 pub(crate) use self::standard::{
     AdditionalSection, AnswerSection, AuthoritySection, DnsHeaderFlags, DnsMessage, HeaderSection,
-    QuestionSection, RecordType,
+    OpCodeOptions, QuestionSection, RecordType,
 };
