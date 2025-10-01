@@ -5,4 +5,4 @@ edition = "2024"
 publish = false
 
 [dependencies]
-stalkermap = { path = "../stalkermap", default-features = false, features = ["agnostic"]}
+stalkermap = { path = "../stalkermap", features = ["std"]}

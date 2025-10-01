@@ -65,9 +65,9 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stalkermap = { version = "0.1.1", features = ["std"]}
-stalkermap = { version = "0.1.1", features = ["tokio-dep"]}
-stalkermap = { version = "0.1.1", default-features = false, features = ["agnostic"]}
+stalkermap = { version = "0.1.2", features = ["std"]}
+stalkermap = { version = "0.1.2", features = ["tokio-dep"]}
+stalkermap = { version = "0.1.2", default-features = false, features = ["agnostic"]}
 ```
 
 ## Usage Examples
@@ -178,7 +178,7 @@ fn main() {
  // Encode into raw bytes, ready to send via UDP/TCP
  let bytes = msg.encode_query();
 
- assert!(bytes.len() > 12); // includes header + question
+ assert!(!bytes[12..].is_empty()); // includes header + question
  ```
 
 ## Architecture

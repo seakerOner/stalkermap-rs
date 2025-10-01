@@ -283,6 +283,7 @@ dependencies = [
 name = "stalkermap"
 version = "0.1.2"
 dependencies = [
+ "cfg-if",
  "rand",
  "tokio",
 ]
