@@ -143,8 +143,12 @@ fn main() {
         }
     };
 
-    println!("Full url: {}", url.full_url);
+    let cname = resolve_cname(&url.target)?;
+    let txt = resolve_txt(&url.target)?;
+
     println!("{}", url);
+    println!("{:#?}", cname);
+    println!("{:#?}", txt);
 }
 ```
 

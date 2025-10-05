@@ -122,8 +122,9 @@
 //! This example demonstrates the complete workflow of getting user input, validating it,
 //! and parsing URLs - perfect for network scanner applications:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use stalkermap::utils::{Terminal, Sanitize, DesiredType, UrlParser};
+//! use stalkermap::dns::resolver::{resolve_cname, resolve_mx, resolve_txt};
 //!
 //!     // Get URL from user with validation
 //!     let url: UrlParser = loop {
@@ -139,8 +140,12 @@
 //!         }
 //!     };
 //!
-//!     println!("Full url:{}", url.full_url);
+//!     let cname = resolve_cname(&url.target)?;
+//!     let txt = resolve_txt(&url.target)?;
+//!
 //!     println!("{}", url);
+//!     println!("{:#?}", cname);
+//!     println!("{:#?}", txt);
 //! ```
 //!
 //! ### "Agnostic" Only Feature DNS Compressor Example
