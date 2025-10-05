@@ -1,6 +1,7 @@
 //use stalkermap::utils::sanitize::{DesiredType, Sanitize};
 //use stalkermap::utils::terminal::Terminal;
 //use stalkermap::utils::url;
+use stalkermap::dns::resolver::{resolve_cname, resolve_ipv4, resolve_txt};
 use stalkermap::utils::*;
 
 fn main() {
@@ -31,6 +32,18 @@ fn main() {
     println!(
         "------------------------------------------------------------------------------------",
     );
+    match resolve_ipv4("example.com") {
+        Ok(ips) => println!("{:#?}", ips),
+        Err(e) => eprintln!("{}", e),
+    }
+    match resolve_cname("example.com") {
+        Ok(v) => println!("{:#?}", v),
+        Err(e) => eprintln!("{}", e),
+    }
+    match resolve_txt("example.com") {
+        Ok(v) => println!("{:#?}", v),
+        Err(e) => eprintln!("{}", e),
+    }
 
     let url_input = loop {
         let input = Terminal::ask(

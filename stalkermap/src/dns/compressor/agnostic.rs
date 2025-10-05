@@ -31,7 +31,7 @@
 //!
 //! ```rust,no_run
 //! use std::collections::HashMap;
-//! use stalkermap::dns::compressor::MessageCompressor;
+//! use stalkermap::dns::compressor::agnostic::MessageCompressor;
 //!
 //! let mut message = Vec::new();
 //! let mut pointer_map = HashMap::new();

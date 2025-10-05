@@ -89,7 +89,7 @@
 //!
 //! The module is intentionally minimal and focused: it does *not* perform network I/O.
 //! It only supplies validated, shared server addresses for whatever transport layer
-//! (UDP/TCP/DoT/DoH) you choose to implement separately.
+//! (UDP/TCP/DoT/DoH) you choose to implement separately or with the resolver function helpers.
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{error::Error, fmt::Display, sync::RwLock};

@@ -31,10 +31,8 @@
 use std::{collections::HashMap, error::Error, fmt::Display};
 
 #[derive(PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub(crate) struct MessageCompressor {}
 
-#[allow(dead_code)]
 impl MessageCompressor {
     /// Reference to RFC1035, page 30 (4.1.4)
     ///
@@ -121,7 +119,95 @@ impl MessageCompressor {
         message.push(0);
         Ok(())
     }
+
+    pub(crate) fn decompress_name(
+        buf: &[u8],
+        offset: &mut usize,
+    ) -> Result<String, DecompressorErrors> {
+        let mut labels = Vec::new();
+        let mut jumped = false;
+        let mut current_offset = *offset;
+        let mut seen_pointers = 0;
+
+        loop {
+            if current_offset >= buf.len() {
+                return Err(DecompressorErrors::OutOfBounds);
+            }
+
+            let len = buf[current_offset] as usize;
+
+            if len & 0xC0 == 0xC0 {
+                if current_offset + 1 >= buf.len() {
+                    return Err(DecompressorErrors::IncompletePointer);
+                }
+
+                let b2 = buf[current_offset + 1] as usize;
+                //let pointer_offset = (((len & 0x3F) << 8) | b2) as usize;
+                let pointer_offset = ((len & 0x3F) << 8) | b2;
+
+                if pointer_offset >= buf.len() {
+                    return Err(DecompressorErrors::PointerOffsetOOB);
+                }
+
+                seen_pointers += 1;
+                if seen_pointers > 10 {
+                    return Err(DecompressorErrors::TooManyNestedPointers);
+                }
+
+                if !jumped {
+                    *offset = current_offset + 2;
+                    jumped = true;
+                }
+
+                current_offset = pointer_offset;
+                continue;
+            }
+
+            if len == 0 {
+                current_offset += 1;
+                if !jumped {
+                    *offset = current_offset;
+                }
+                break;
+            }
+
+            current_offset += 1;
+            if current_offset + len > buf.len() {
+                return Err(DecompressorErrors::InvalidLabelSize);
+            }
+
+            let label = String::from_utf8_lossy(&buf[current_offset..current_offset + len]);
+            labels.push(label.to_string());
+            current_offset += len;
+        }
+
+        Ok(labels.join("."))
+    }
 }
+
+#[derive(Debug)]
+pub enum DecompressorErrors {
+    IncompletePointer,
+    OutOfBounds,
+    PointerOffsetOOB,
+    TooManyNestedPointers,
+    InvalidLabelSize,
+}
+
+impl Display for DecompressorErrors {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DecompressorErrors::OutOfBounds => write!(f, "Out of bounds while decompressing name"),
+            DecompressorErrors::IncompletePointer => write!(f, "Incomplete pointer in name"),
+            DecompressorErrors::PointerOffsetOOB => write!(f, "Pointer offset out of bounds"),
+            DecompressorErrors::TooManyNestedPointers => {
+                write!(f, "Too many nested pointers (possible loop)")
+            }
+            DecompressorErrors::InvalidLabelSize => write!(f, "Label length exceeds buffer size"),
+        }
+    }
+}
+impl Error for DecompressorErrors {}
 
 #[derive(Debug)]
 pub(crate) enum CompressorErrors {

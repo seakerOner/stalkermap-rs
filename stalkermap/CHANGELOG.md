@@ -10,6 +10,25 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
+## [0.1.3] - 05-10-2025
+### Added
+
+- **All versions**
+  - DNS transport layer:
+    - `get_servers()`, `has_custom_servers()`, `reset_servers()`, `set_servers()`.
+
+- **"std" and "tokio-dep" features**
+  - Blocking resolver functions:
+    - `resolve_ipv4()`, `resolve_cname()`, `resolve_hinfo()`, `resolve_minfo()`, `resolve_mx()`, `resolve_ptr()`, `resolve_soa()`, `resolve_txt()`, `resolve_wks()`.
+  - Internal function `send_query_blocking()` for UDP queries.
+
+
+### Technical Notes
+- DNS transport layer added for all versions.
+- Resolver now supports multiple record types via blocking UDP queries.
+- Documentation includes all public functions for all features except `agnostic`, using stubs for types where needed.
+- Error handling refined with structured types (`UdpErrors`, `ResolverErrors`, `DecodeQueryErrors`).
+
 ## [0.1.2] - 30-09-2025
 ### Added 
 The current release provides message construction and encoding. Decoding and message transport helpers are planned for a future release.
