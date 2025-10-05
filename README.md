@@ -10,8 +10,6 @@ A comprehensive Rust library for building CLI network scanner applications with 
 
 - For advanced users: see docs for **dns::resolver::agnostic** and **dns::compressor::agnostic**
 
-- The current release provides message construction and encoding. Decoding and message transport helpers are planned for a future release.
-
 ### Currently Available
 
 (All feature versions)
@@ -19,22 +17,15 @@ A comprehensive Rust library for building CLI network scanner applications with 
 - **Interactive Terminal Interface** - User-friendly CLI input with validation loops  
 - **URL Parsing** - Comprehensive HTTP/HTTPS URL parsing with host validation
 
+("std" feature)
+- **DNS Resolver** — Blocking DNS queries supporting multiple record types (A, MX, TXT, SOA, PTR, WKS, etc.)
+
 ("Agnostic" feature)
-- **DNS message structure** - With encoder helpers (Following the RFC1035)
-- **DNS message compressor** - For hostnames (Following the RFC1035)
-
-### Work in progress
-
-(All feature versions)
-- Inside the dns module file you will see a roadmap of features I might implement, subject to change
-- A transport layer to send the DNS messages
-
-("std" and "tokio-dep" features)
-- **DNS Resolver** - Higher-level dns queries (planned)
+- **DNS message structure** — With encoder helpers (RFC1035 compliant)  
+- **DNS message compressor** — For hostnames (RFC1035 compliant)  
 
 ### Planned Features
-
-- **DNS Queries** - Resolve hostnames and perform DNS lookups
+ 
 - **Port Scanning** - Efficient port scanning with customizable options
 - **Directory Enumeration** - Web directory and file discovery
 - **Report Generation** - Export scan results to various formats
@@ -44,20 +35,19 @@ A comprehensive Rust library for building CLI network scanner applications with 
 - **Agnostic version**
   - Only parsing, encoding/decoding of DNS messages and helpers.  
   - No executor or transport included — user chooses their own.  
-  - Fast to integrate, lightweight, perfect for advanced/custom usage.
+  - Lightweight and easy to integrate.  
+  - Includes access to low-level DNS structures and helpers.
 
 - **Default (`std`) version**
   - Blocking TCP/UDP transport using `std::net`.  
-  - Basic fully functional implementation, easy to maintain.  
-  - Ideal for users who want simplicity and don’t need async.
-  - **Note:** Network features are not yet implemented; they require additional abstractions for ease of use and it takes time.
+  - Fully functional DNS resolver for blocking queries.
 
 
 - **Tokio (`async`) version**
   - Replaces blocking transport with `tokio::net` for async TCP/UDP.  
   - Supports non-blocking behaviors inspired by RFCs (TCP fallback, EDNS, retries, etc.).  
-  - Can include opinionated helpers to accelerate scanner development.
-  - **Note:** Network features are not yet implemented (same reason as above).
+  - **Note:** Network features are not yet implemented; they require further abstractions for user-friendly integration.
+
   
 ## Quick Start
 
@@ -65,12 +55,25 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stalkermap = { version = "0.1.2", features = ["std"]}
-stalkermap = { version = "0.1.2", features = ["tokio-dep"]}
-stalkermap = { version = "0.1.2", default-features = false, features = ["agnostic"]}
+stalkermap = { version = "0.1.3", features = ["std"]}
+stalkermap = { version = "0.1.3", features = ["tokio-dep"]}
+stalkermap = { version = "0.1.3", default-features = false, features = ["agnostic"]}
 ```
 
 ## Usage Examples
+
+### DNS Resolver Example (std)
+
+```rust,no_run
+
+use stalkermap::dns::resolver::{resolve_ipv4, resolve_mx};
+
+let a_records = resolve_ipv4("example.com").unwrap();
+let mx_records = resolve_mx("example.com").unwrap();
+
+println!("A records: {:#?}", a_records);
+println!("MX records: {:#?}", mx_records);
+```
 
 ### Basic Input & Range Validation
 
@@ -143,12 +146,7 @@ fn main() {
         }
     };
 
-    let cname = resolve_cname(&url.target)?;
-    let txt = resolve_txt(&url.target)?;
-
     println!("{}", url);
-    println!("{:#?}", cname);
-    println!("{:#?}", txt);
 }
 ```
 

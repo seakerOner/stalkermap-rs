@@ -10,7 +10,7 @@
 //!
 //! These servers are reliable, widely-used and independent of the user's ISP.
 //!
-//! //! ## Default servers
+//! ## Default servers
 //!
 //! By default, the following resolvers are used:
 //!
