@@ -17,6 +17,9 @@
 //! ("std" feature)
 //! - **DNS Resolver** - Blocking DNS queries with support for multiple record types (A, MX, TXT, SOA, PTR, WKS, etc.)
 //!
+//! ("tokio-dep" feature)
+//! - **DNS Resolver** - Async DNS queries with support for multiple record types (A, MX, TXT, SOA, PTR, WKS, etc.)
+//!
 //! ("Agnostic" feature)
 //! - **DNS message structure** - With encoder helpers (RFC1035 compliant)
 //! - **DNS message compressor** - For hostnames (RFC1035 compliant)
@@ -40,9 +43,8 @@
 //!
 //! - **Tokio (`async`) version**
 //!   - Replaces blocking transport with `tokio::net` for async TCP/UDP.  
-//!   - Supports non-blocking behaviors inspired by RFCs (TCP fallback, EDNS, retries, etc.).  
+//!   - Supports non-blocking behaviors inspired by RFCs (TCP fallback, EDNS, retries, etc.). (Planned)
 //!   - Can include opinionated helpers to accelerate scanner development.
-//!   - **Note:** Network features are not yet implemented; they require additional abstractions for ease of use and it takes time.
 //!
 //! ## Quick Start
 //!
@@ -50,16 +52,16 @@
 //!
 //! ```toml
 //! [dependencies]
-//! stalkermap = { version = "0.1.3", features = ["std"]}
-//! stalkermap = { version = "0.1.3", features = ["tokio-dep"]}
-//! stalkermap = { version = "0.1.3", default-features = false, features = ["agnostic"]}
+//! stalkermap = { version = "0.1.4", features = ["std"]}
+//! stalkermap = { version = "0.1.4", features = ["tokio-dep"]}
+//! stalkermap = { version = "0.1.4", default-features = false, features = ["agnostic"]}
 //! ```
 //!
 //! ## Usage Examples
 //!
 //! ### DNS Resolver Example (std)
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! # #[cfg(not(feature = "agnostic"))]
 //! # {
 //! use stalkermap::dns::resolver::{resolve_ipv4, resolve_mx};

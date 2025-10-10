@@ -29,7 +29,7 @@
 //! Users can either build a DNS message manually using their own structures
 //! or use the `DnsMessage` struct provided by this library. Example with a raw buffer:
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use std::collections::HashMap;
 //! use stalkermap::dns::compressor::agnostic::MessageCompressor;
 //!

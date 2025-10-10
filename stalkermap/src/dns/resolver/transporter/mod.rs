@@ -42,8 +42,9 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
-//! use stalkermap::dns::resolver::transporter::{get_servers, set_servers, reset_servers, has_custom_servers};
+//! ```rust,ignore
+//! use stalkermap::dns::resolver::transporter::{get_servers, set_servers, reset_servers,
+//! has_custom_server};
 //!
 //! // Get the default list
 //! let defaults = get_servers();

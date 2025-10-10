@@ -132,6 +132,7 @@ impl DnsMessage {
         if buf.len() < 12 {
             return Err(DecodeQueryErrors::InvalidBufferSize);
         }
+
         let header = HeaderSection {
             id: u16::from_be_bytes([buf[0], buf[1]]),
             flags: u16::from_be_bytes([buf[2], buf[3]]),
@@ -151,6 +152,11 @@ impl DnsMessage {
             Ok(s) => s,
             Err(e) => return Err(DecodeQueryErrors::DecompressorError(e)),
         };
+
+        if offset + 4 > buf.len() {
+            return Err(DecodeQueryErrors::InvalidBufferSize);
+        }
+
         let qrecord_type = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
         let qclass = u16::from_be_bytes([buf[offset + 2], buf[offset + 3]]);
         offset += 4;
@@ -169,6 +175,10 @@ impl DnsMessage {
                 Err(e) => return Err(DecodeQueryErrors::DecompressorError(e)),
             };
 
+            if offset + 10 > buf.len() {
+                return Err(DecodeQueryErrors::InvalidBufferSize);
+            }
+
             let arecord_type = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
             let aclass = u16::from_be_bytes([buf[offset + 2], buf[offset + 3]]);
             let attl = i32::from_be_bytes([
@@ -179,6 +189,7 @@ impl DnsMessage {
             ]);
             let ard_length = u16::from_be_bytes([buf[offset + 8], buf[offset + 9]]);
             offset += 10;
+
             let temp_l = offset + ard_length as usize;
             let ar_data = &buf[offset..temp_l];
 
@@ -207,6 +218,10 @@ impl DnsMessage {
                 Err(e) => return Err(DecodeQueryErrors::DecompressorError(e)),
             };
 
+            if offset + 10 > buf.len() {
+                return Err(DecodeQueryErrors::InvalidBufferSize);
+            }
+
             let nrecord_type = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
             let nclass = u16::from_be_bytes([buf[offset + 2], buf[offset + 3]]);
             let nttl = i32::from_be_bytes([
@@ -217,6 +232,7 @@ impl DnsMessage {
             ]);
             let nrd_length = u16::from_be_bytes([buf[offset + 8], buf[offset + 9]]);
             offset += 10;
+
             let temp_l = offset + nrd_length as usize;
             let nr_data = &buf[offset..temp_l];
 
@@ -242,6 +258,10 @@ impl DnsMessage {
                 Err(e) => return Err(DecodeQueryErrors::DecompressorError(e)),
             };
 
+            if offset + 10 > buf.len() {
+                return Err(DecodeQueryErrors::InvalidBufferSize);
+            }
+
             let arecord_type = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
             let aclass = u16::from_be_bytes([buf[offset + 2], buf[offset + 3]]);
             let attl = i32::from_be_bytes([
@@ -252,6 +272,7 @@ impl DnsMessage {
             ]);
             let ard_length = u16::from_be_bytes([buf[offset + 8], buf[offset + 9]]);
             offset += 10;
+
             let temp_l = offset + ard_length as usize;
             let ar_data = &buf[offset..temp_l];
 

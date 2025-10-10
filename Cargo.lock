@@ -281,7 +281,7 @@ dependencies = [
 
 [[package]]
 name = "stalkermap"
-version = "0.1.31"
+version = "0.1.4"
 dependencies = [
  "cfg-if",
  "rand",
@@ -293,6 +293,7 @@ name = "stalkermap-cli"
 version = "0.1.0"
 dependencies = [
  "stalkermap",
+ "tokio",
 ]
 
 [[package]]

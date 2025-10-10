@@ -1,6 +1,6 @@
 [package]
 name = "stalkermap"
-version = "0.1.31"
+version = "0.1.4"
 edition = "2024"
 license = "MIT"
 description = "A comprehensive Rust library for building CLI network scanner applications with robust input validation, terminal interaction, and URL parsing capabilities."
