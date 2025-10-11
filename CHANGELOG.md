@@ -10,6 +10,17 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
+## [0.1.40] - 10-10-2025
+### Added
+
+- **"std" and "tokio-dep" features**
+  - Better error handling on the decoding of dns messages used in the DNS Resolver functions
+
+- **"tokio-dep" feature**
+  - Async resolver functions:
+    - `resolve_ipv4_async()`, `resolve_cname_async()`, `resolve_hinfo_async()`, `resolve_minfo_async()`, `resolve_mx_async()`, `resolve_ptr_async()`, `resolve_soa_async()`, `resolve_txt_async()`, `resolve_wks_async()`.
+  - Internal function `send_query_async()` for UDP queries.
+
 ## [0.1.3] - 05-10-2025
 ### Added
 

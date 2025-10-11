@@ -52,9 +52,9 @@
 //!
 //! ```toml
 //! [dependencies]
-//! stalkermap = { version = "0.1.4", features = ["std"]}
-//! stalkermap = { version = "0.1.4", features = ["tokio-dep"]}
-//! stalkermap = { version = "0.1.4", default-features = false, features = ["agnostic"]}
+//! stalkermap = { version = "0.1.40", features = ["std"]}
+//! stalkermap = { version = "0.1.40", features = ["tokio-dep"]}
+//! stalkermap = { version = "0.1.40", default-features = false, features = ["agnostic"]}
 //! ```
 //!
 //! ## Usage Examples

@@ -10,6 +10,28 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
+## [0.1.40] - 11-10-2025
+
+### Technical Notes
+- Fixing the version number for crates.io, version `0.1.4` and version `0.1.40` are the same in functionality.
+- Feature `tokio-dep` instead of using the feature `full` on tokio it only uses features `time` and `net`.
+
+## [0.1.4] - 10-10-2025
+### Added
+
+- **"std" and "tokio-dep" features**
+  - Better error handling on the decoding of dns messages used in the DNS Resolver functions
+
+- **"tokio-dep" feature**
+  - Async resolver functions:
+    - `resolve_ipv4_async()`, `resolve_cname_async()`, `resolve_hinfo_async()`, `resolve_minfo_async()`, `resolve_mx_async()`, `resolve_ptr_async()`, `resolve_soa_async()`, `resolve_txt_async()`, `resolve_wks_async()`.
+  - Internal function `send_query_async()` for UDP queries.
+
+## [0.1.31] 
+
+### Technical Notes
+- Small fixes on the documentation for crates.io :D
+
 ## [0.1.3] - 05-10-2025
 ### Added
 
