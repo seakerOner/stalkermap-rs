@@ -240,4 +240,5 @@ pub mod dns;
 
 pub mod utils;
 
+#[cfg(feature = "tokio-dep")]
 pub mod scanner;
