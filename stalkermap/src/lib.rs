@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 //! # StalkerMap
 //!
 //! A comprehensive Rust library for building CLI network scanner applications with robust input validation,
@@ -240,8 +241,6 @@ pub mod dns;
 
 pub mod utils;
 
-cfg_if::cfg_if! {
-    if #[cfg(any(feature = "tokio-dep", doc))] {
-        pub mod scanner;
-    }
-}
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
+#[cfg(feature = "tokio-dep")]
+pub mod scanner;

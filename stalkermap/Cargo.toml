@@ -24,3 +24,8 @@ std = []
 tokio-dep = ["tokio", "tokio-stream", "async-trait", "serde", "serde_json"]
 agnostic = []
 
+[package.metadata.docs.rs]
+features = ["tokio-dep"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+

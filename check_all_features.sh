@@ -36,6 +36,13 @@ for FEATURE in "${RUN_FEATURES[@]}"; do
     echo "-> Running doc tests"
     cargo test --doc --no-default-features --features "$FEATURE"
 
+    if [ "$FEATURE" = "tokio-dep" ]; then
+	echo "-> Running **tokio-dep** Rust Nightly Docs"
+	rustup override set nightly
+	RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features tokio-dep --no-deps
+	rustup override unset
+    fi
+
     echo "------------------------------"
     echo "   Feature $FEATURE OK!"
     echo "------------------------------"

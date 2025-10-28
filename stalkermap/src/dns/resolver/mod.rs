@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 //! # Stalkermap DNS Resolver
 //!
 //! A lightweight, blocking DNS resolver built in pure Rust, fully compliant with [RFC 1035](https://datatracker.ietf.org/doc/html/rfc1035).
@@ -508,6 +509,7 @@ cfg_if::cfg_if! {
         use tokio::net::UdpSocket as TokioUdpSocket;
         use tokio::time::{timeout, Duration as TokioDuration };
 
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_ipv4_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync>{
             #[cfg(not(doc))]
             {
@@ -529,6 +531,7 @@ cfg_if::cfg_if! {
         /// Resolves a canonical name (`CNAME`) record for the given domain name.
         ///
         /// This record maps an alias name to its true, canonical domain name.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_cname_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -550,6 +553,7 @@ cfg_if::cfg_if! {
         /// Resolves a Start of Authority (`SOA`) record for the given domain name.
         ///
         /// The SOA record defines the authoritative DNS server and zone parameters.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_soa_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -571,6 +575,7 @@ cfg_if::cfg_if! {
         /// Resolves a Well-Known Services (`WKS`) record for the given domain name.
         ///
         /// The WKS record describes network services associated with an address.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_wks_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -589,6 +594,7 @@ cfg_if::cfg_if! {
             }
         }
 
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_ptr_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -609,6 +615,7 @@ cfg_if::cfg_if! {
         }
 
         /// Resolves a Host Information (`HINFO`) record for the given domain name.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_hinfo_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -628,6 +635,7 @@ cfg_if::cfg_if! {
         }
 
         /// Resolves a Mail Information (`MINFO`) record for the given domain name.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_minfo_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -649,6 +657,7 @@ cfg_if::cfg_if! {
         /// Resolves a Mail Exchange (`MX`) record for the given domain name.
         ///
         /// MX records define the mail servers responsible for handling email for the domain.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_mx_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {
@@ -670,6 +679,7 @@ cfg_if::cfg_if! {
         /// Resolves a Text (`TXT`) record for the given domain name.
         ///
         /// Commonly used for SPF, DKIM, and general verification data.
+        #[cfg_attr(docsrs, doc(cfg(feature = "tokio-dep")))]
         pub async fn resolve_txt_async(name: &str) -> Result<DnsMessage, ResolverErrorsAsync> {
             #[cfg(not(doc))]
             {

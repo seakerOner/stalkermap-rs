@@ -184,9 +184,7 @@ impl LogFormatter for StructuredFormatter {
 
     fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
         LogRecord {
-            header_response: LogHeader {
-                actions_results: actions_results,
-            },
+            header_response: LogHeader { actions_results },
             data: String::from_utf8_lossy(raw_data).into_owned(),
         }
     }
@@ -202,15 +200,11 @@ impl LogFormatter for JsonFormatter {
     type Output = String;
 
     fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
-        let json = serde_json::to_string(&LogRecord {
-            header_response: LogHeader {
-                actions_results: actions_results,
-            },
+        serde_json::to_string(&LogRecord {
+            header_response: LogHeader { actions_results },
             data: String::from_utf8_lossy(raw_data).into_owned(),
         })
-        .unwrap();
-
-        json
+        .unwrap()
     }
 }
 
@@ -237,8 +231,8 @@ impl Task {
     /// Creates a new task for the given `target` with the specified `actions`.
     pub fn new(todo: Vec<Actions>, target: UrlParser) -> Self {
         Self {
-            todo: todo,
-            target: target,
+            todo,
+            target,
             queued: AtomicBool::new(false),
         }
     }
@@ -284,7 +278,7 @@ pub enum ScannerState {
 /// - and runtime options.
 ///
 /// It is **not** responsible for executing tasks directly;  
-/// that responsibility belongs to [`BuiltScanner`], which implements [`Stalker`].
+/// that responsibility belongs to `BuiltScanner`, which implements [`Stalker`].
 #[derive(Clone)]
 pub struct Scanner<F>
 where
@@ -339,7 +333,7 @@ where
 
         pool.push_back(Task {
             todo: task,
-            target: target,
+            target,
             queued: AtomicBool::new(false),
         });
     }
@@ -428,6 +422,7 @@ where
     F: LogFormatter + Default,
 {
     /// Creates a new [`Scanner`] with default configuration.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let (sender, _) = broadcast::channel::<F::Output>(1024);
 
@@ -440,7 +435,7 @@ where
         }
     }
 
-    /// Builds a ready-to-use [`Stalker`] implementation using [`BuiltScanner`].
+    /// Builds a ready-to-use [`Stalker`] implementation using `BuiltScanner`.
     ///
     /// This returns an [`Arc<dyn Stalker>`] that can safely be shared across threads.
     pub fn build(mut self) -> Arc<dyn Stalker<F = F> + Send + Sync + 'static> {
@@ -475,14 +470,10 @@ mod tests {
     #[test]
     fn test_build_scanner_default_and_custom_options() {
         let scanner = Scanner::<JsonFormatter>::new();
-        let scanner_custom = Scanner::<JsonFormatter>::new().with_options(
-            ScannerOptions {
-                batch_size: 100,
-                timeout_ms: 2_000,
-            }
-            .try_into()
-            .unwrap(),
-        );
+        let scanner_custom = Scanner::<JsonFormatter>::new().with_options(ScannerOptions {
+            batch_size: 100,
+            timeout_ms: 2_000,
+        });
 
         assert_eq!(scanner.options.batch_size, 64);
         assert_eq!(scanner.options.timeout_ms, 3_000);
