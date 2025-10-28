@@ -1,20 +1,24 @@
 //! # Scanner Engine
 //!
-//! This module implements a **concurrent scanning engine** based on a task queue model.
+//! This module implements a **concurrent scanning engine** built on top of a lightweight asynchronous task queue.
 //!
-//! It provides a trait [`Stalker`] that defines high-level scanning operations,
-//! and a concrete implementation [`Scanner`] that manages tasks, logs, and configuration
-//! in a thread-safe way.  
+//! It exposes the [`Stalker`] trait for defining scanning operations,
+//! and the [`Scanner`] struct, which manages task scheduling, configuration, and logging.
 //!
-//! The `Scanner` is designed as a *task orchestrator* for I/O-bound workloads,
-//! such as network scans, port checks, or service discovery.
+//! It serves as a *task orchestrator* for I/O-bound workloads such as network scanning,
+//! port probing, or service enumeration.
 //!
-//! ## Architecture
+//! Internally, it leverages asynchronous execution and a pluggable [`LogFormatter`] to support
+//! flexible output formats (raw bytes, structured data, JSON, etc.).
+//!
+//! ## Architecture Overview
+//!
+//! The core architecture separates the scanning logic from orchestration and I/O formatting layers:
 //!
 //! ```text
 //! +-----------------------------+
 //! |        User Code            |
-//! | (interacts via Stalker)     |
+//! |   (interacts via Stalker)   |
 //! +-------------+---------------+
 //!               |
 //!               v
@@ -25,34 +29,85 @@
 //!               |
 //!               v
 //! +-----------------------------+
-//! |         Scanner             |
-//! | (state, task queue, logger) |
+//! |          Scanner            |
+//! | (state, queue, formatter)   |
 //! +-----------------------------+
 //! ```
+//!
+//! ## Key Components
+//!
+//! - [`Scanner`]: Holds configuration, task queue, and log channel; does not execute tasks directly.
+//! - [`Task`]: Represents a single scanning job (actions + target), with a flag to avoid duplicate execution.
+//! - [`Actions`]: Defines what to perform (e.g., port checks, service detection).
+//! - [`LogFormatter`]: Controls how scan results are serialized or formatted.
+//!
+//! ## Example Usage
+//!
+//! ```rust,no_run
+//! use stalkermap::scanner::{Scanner, Stalker, Actions, JsonFormatter};
+//! use tokio_stream::StreamExt;
+//! use std::str::FromStr;
+//!
+//! #[tokio::main]
+//! async fn main() {
+//!     let scanner = Scanner::<JsonFormatter>::new().build();
+//!
+//!     scanner.add_task(
+//!         vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+//!         "127.0.0.1:80".parse().unwrap(),
+//!     );
+//!
+//!     scanner.execute_tasks().await;
+//!
+//!     let mut stream = scanner.get_logs_stream().await;
+//!     while let Some(log) = stream.next().await {
+//!         match log {
+//!             Ok(log) => println!("{:?}", log),
+//!             Err(_) => break
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! ## Design Notes
+//!
+//! - The engine ensures **thread-safe concurrency** for all shared components.
+//! - `batch_size` in [`ScannerOptions`] limits **concurrent task execution** via a semaphore.
+//! - Log output is **formatter-agnostic**, allowing custom implementations.
+//! - Shutdown behavior is cooperative — consumers should drop receivers
+//!   or invoke [`Stalker::shutdown`] when done.
+//!
+//! The engine is designed for composability and safety —
+//! all concurrency is explicit, and shutdowns are cooperative.
 use std::{
     collections::{HashMap, HashSet, VecDeque},
+    fmt::Debug,
     sync::{Arc, Mutex, atomic::AtomicBool},
-    time::Duration,
 };
 //use tokio::sync::Mutex;
 use crate::utils::UrlParser;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::{
-    net::{self, TcpStream},
     sync::{
-        OwnedSemaphorePermit, Semaphore, SemaphorePermit,
-        broadcast::{self, Receiver, Sender},
+        Semaphore,
+        broadcast::{self},
     },
+    //net::TcpStream,
 };
-use tokio_stream::wrappers::ReceiverStream;
 
-/// Defines the core scanning behavior that all scanners must implement.
+/// Trait defining the core scanning operations.
 ///
-/// The `Stalker` trait serves as a generic interface for interacting with a scanning engine.
-/// It abstracts over task management, execution, and result collection.
+/// The `Stalker` trait abstracts over a scanning engine, providing
+/// methods for adding tasks, executing them asynchronously,
+/// retrieving logs, and managing shutdown.
+///
+/// # Type Parameters
+/// - `F`: The `LogFormatter` used to format scan results.
 #[async_trait]
 pub trait Stalker: Send + Sync + 'static {
+    type F: LogFormatter;
+
     /// Adds a single task to the scanning queue.
     fn add_task(&self, task: Vec<Actions>, target: UrlParser);
 
@@ -62,26 +117,34 @@ pub trait Stalker: Send + Sync + 'static {
     /// Returns the total number of pending tasks.
     fn total_tasks(&self) -> usize;
 
-    /// Executes all tasks currently in the queue.
+    /// Executes all tasks currently in the queue asynchronously.
+    ///
+    /// Tasks are executed concurrently up to the `batch_size` limit.
+    /// Each task runs at most once, and log events are streamed via the configured formatter.
     async fn execute_tasks(&self);
 
-    async fn get_logs_stream(&self) -> tokio_stream::wrappers::BroadcastStream<Vec<u8>>;
+    /// Returns a stream of log events produced during task execution.
+    async fn get_logs_stream(
+        &self,
+    ) -> tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>;
+
+    /// Signals the scanner to shut down and release resources.
+    ///
+    /// All running tasks will continue until completion, but no new tasks will be accepted.
+    fn shutdown(&self);
 }
 
 /// Thread-safe queue of pending tasks.
 type TaskPool = Arc<Mutex<VecDeque<Task>>>;
-/// Thread-safe in-memory byte logger.
-type LoggerSender = broadcast::Sender<Vec<u8>>;
 
-#[derive(Clone, Debug)]
-pub enum LoggerType {
-    Raw,
-    Structured,
-    Json,
-}
-
+/// Trait for formatting scan results.
+///
+/// A `LogFormatter` defines how raw scan results and action outcomes
+/// are converted into a structured output type.
 pub trait LogFormatter: Send + Sync + 'static {
-    fn format(&self, data: &[u8]);
+    type Output: Send + Sync + 'static + Clone + Debug;
+
+    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -91,18 +154,82 @@ pub struct LogRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LogHeader {}
+pub struct LogHeader {
+    pub actions_results: HashMap<Actions, String>,
+}
+
+/// Formats scan results as raw bytes.
+pub struct RawFormatter;
+/// Formats scan results as structured Rust types (`LogRecord`).
+pub struct StructuredFormatter;
+/// Formats scan results as JSON strings.
+pub struct JsonFormatter;
+
+impl LogFormatter for RawFormatter {
+    type Output = Vec<u8>;
+
+    fn format(&self, _actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+        raw_data.to_vec()
+    }
+}
+
+impl Default for RawFormatter {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl LogFormatter for StructuredFormatter {
+    type Output = LogRecord;
+
+    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+        LogRecord {
+            header_response: LogHeader {
+                actions_results: actions_results,
+            },
+            data: String::from_utf8_lossy(raw_data).into_owned(),
+        }
+    }
+}
+
+impl Default for StructuredFormatter {
+    fn default() -> Self {
+        Self
+    }
+}
+
+impl LogFormatter for JsonFormatter {
+    type Output = String;
+
+    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+        let json = serde_json::to_string(&LogRecord {
+            header_response: LogHeader {
+                actions_results: actions_results,
+            },
+            data: String::from_utf8_lossy(raw_data).into_owned(),
+        })
+        .unwrap();
+
+        json
+    }
+}
+
+impl Default for JsonFormatter {
+    fn default() -> Self {
+        Self
+    }
+}
 
 /// Represents a single scanning job.
 ///
-/// A [`Task`] defines what actions should be executed (see [`Actions`])
-/// and on which target (via [`UrlParser`]).
+/// A `Task` bundles the actions to perform on a target URL or host,
+/// and tracks whether it has been queued.
 pub struct Task {
     /// Actions that define the workflow for this task.
     todo: Vec<Actions>,
     /// The target (host, URL, IP, etc.) to be scanned.
     target: UrlParser,
-    /// Atomic flag marking whether this task has been queued or executed.
+    /// Flag indicating if the task has been queued.
     queued: AtomicBool,
 }
 
@@ -117,7 +244,10 @@ impl Task {
     }
 }
 
-/// Configuration options for a [`Scanner`].
+/// Configuration options for the scanning engine.
+///
+/// Controls runtime behavior such as batch processing size
+/// and network timeouts.
 #[derive(Clone, Debug)]
 pub struct ScannerOptions {
     /// Maximum number of tasks processed in a single batch.
@@ -135,9 +265,19 @@ impl Default for ScannerOptions {
     }
 }
 
+#[derive(Debug)]
+pub enum ScannerState {
+    Uninitialized,
+    Initialized,
+    Running,
+    ShuttingDown,
+    Stopped,
+}
+
 /// Core scanner structure.
 ///
 /// The [`Scanner`] stores all shared data and configuration required for scanning:
+/// - state
 /// - the task queue,
 /// - logs,
 /// - pointer map,
@@ -145,19 +285,27 @@ impl Default for ScannerOptions {
 ///
 /// It is **not** responsible for executing tasks directly;  
 /// that responsibility belongs to [`BuiltScanner`], which implements [`Stalker`].
-pub struct Scanner {
+#[derive(Clone)]
+pub struct Scanner<F>
+where
+    F: LogFormatter,
+{
+    /// Current runtime state.
+    pub state: Arc<Mutex<ScannerState>>,
     /// Configuration options controlling runtime behavior.
     pub options: ScannerOptions,
     /// Shared queue of pending tasks.
     pub task_pool: TaskPool,
-    /// Shared logging buffer.
-    pub logger_tx: LoggerSender,
-    pub logger_format: LoggerType,
+    /// Broadcast channel for log events.
+    pub logger_tx: Arc<Mutex<Option<broadcast::Sender<<F as LogFormatter>::Output>>>>,
+    /// Formatter used to serialize log events.
+    pub logger_format: Arc<F>,
 }
 
-/// Actions represent different scanning operations that can be performed
-/// on a given target.
-#[derive(PartialEq, Eq, PartialOrd, Hash)]
+/// Enumerates the possible scanning operations.
+///
+/// Each action defines a type of check or probe to perform on a target.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash, Serialize, Deserialize)]
 pub enum Actions {
     /// Check if a single port is open.
     PortIsOpen,
@@ -171,14 +319,21 @@ pub enum Actions {
     FallBack,
 }
 
-/// Concrete implementation of [`Stalker`].
+/// Internal concrete implementation of [`Stalker`].
 ///
-/// The [`BuiltScanner`] holds an `Arc` to a [`Scanner`]
-/// and provides runtime behavior for the `Stalker` interface.
-struct BuiltScanner(Arc<Scanner>);
+/// Wraps a shared [`Scanner`] instance and provides runtime
+/// behavior for task execution, logging, and shutdown.
+struct BuiltScanner<F>(Arc<Scanner<F>>)
+where
+    F: LogFormatter;
 
 #[async_trait]
-impl Stalker for BuiltScanner {
+impl<F> Stalker for BuiltScanner<F>
+where
+    F: LogFormatter,
+{
+    type F = F;
+
     fn add_task(&self, task: Vec<Actions>, target: UrlParser) {
         let mut pool = self.0.task_pool.lock().unwrap();
 
@@ -194,42 +349,46 @@ impl Stalker for BuiltScanner {
     }
 
     async fn execute_tasks(&self) {
+        *self.0.state.lock().unwrap() = ScannerState::Running;
         let batch_size = Arc::new(Semaphore::new(self.0.options.batch_size));
-        let timeout_t = self.0.options.timeout_ms;
-
+        let _timeout_t = self.0.options.timeout_ms;
         let logger_tx = self.0.logger_tx.clone();
 
         loop {
             let task = { self.0.task_pool.lock().unwrap().pop_front() };
             let Some(task) = task else {
-                //TODO:Shutdown Engine
                 break;
             };
 
-            task.queued.swap(true, std::sync::atomic::Ordering::SeqCst);
-
-            if task.queued.load(std::sync::atomic::Ordering::SeqCst) {
+            if !task.queued.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 let permit = match batch_size.clone().acquire_owned().await {
                     Ok(p) => p,
                     Err(_) => {
-                        //TODO:Shutdown Engine
                         break;
                     }
                 };
 
-                let actions: HashSet<Actions> = task.todo.into_iter().collect();
-                let target = task.target;
+                let _actions: HashSet<Actions> = task.todo.into_iter().collect();
+                let _target = task.target;
                 let logs = logger_tx.clone();
+                let log_format = self.0.logger_format.clone();
 
                 tokio::task::spawn(async move {
-                    let log = String::from("banana");
+                    let raw_data: &[u8; 11] = b"hello world";
 
-                    logs.send(log.into_bytes()).unwrap();
+                    let actions_results: HashMap<Actions, String> = HashMap::new();
+                    let log = log_format.format(actions_results, raw_data);
+
+                    if let Some(logs) = &*logs.lock().unwrap() {
+                        let _ = logs.send(log);
+                    }
 
                     drop(permit);
                 });
             }
         }
+
+        self.shutdown();
     }
 
     fn add_multiple_tasks(&self, tasks: Vec<Task>) {
@@ -238,44 +397,64 @@ impl Stalker for BuiltScanner {
         tasks.into_iter().for_each(|t| pool.push_back(t));
     }
 
-    async fn get_logs_stream(&self) -> tokio_stream::wrappers::BroadcastStream<Vec<u8>> {
+    async fn get_logs_stream(
+        &self,
+    ) -> tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output> {
         use tokio_stream::wrappers::BroadcastStream;
 
-        BroadcastStream::new(self.0.logger_tx.subscribe())
+        BroadcastStream::new(
+            self.0
+                .logger_tx
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .subscribe(),
+        )
+    }
+
+    fn shutdown(&self) {
+        *self.0.state.lock().unwrap() = ScannerState::ShuttingDown;
+
+        if let Some(sender) = self.0.logger_tx.lock().unwrap().take() {
+            drop(sender);
+        }
+        *self.0.state.lock().unwrap() = ScannerState::Stopped;
     }
 }
 
-impl Scanner {
+impl<F> Scanner<F>
+where
+    F: LogFormatter + Default,
+{
     /// Creates a new [`Scanner`] with default configuration.
     pub fn new() -> Self {
-        let (sender, _) = broadcast::channel::<Vec<u8>>(1024);
+        let (sender, _) = broadcast::channel::<F::Output>(1024);
 
         Self {
+            state: Arc::new(Mutex::new(ScannerState::Uninitialized)),
             options: ScannerOptions::default(),
             task_pool: Arc::new(Mutex::new(VecDeque::new())),
-            logger_tx: sender,
-            logger_format: LoggerType::Raw,
+            logger_tx: Arc::new(Mutex::new(Some(sender))),
+            logger_format: Arc::new(F::default()),
         }
-    }
-
-    pub fn with_logger(mut self, logger_type: LoggerType) -> Self {
-        self.logger_format = logger_type;
-        self
     }
 
     /// Builds a ready-to-use [`Stalker`] implementation using [`BuiltScanner`].
     ///
     /// This returns an [`Arc<dyn Stalker>`] that can safely be shared across threads.
-    pub fn build(self) -> Arc<dyn Stalker + Send + Sync + 'static> {
+    pub fn build(mut self) -> Arc<dyn Stalker<F = F> + Send + Sync + 'static> {
+        self.state = Arc::new(Mutex::new(ScannerState::Initialized));
         Arc::new(BuiltScanner(Arc::new(self)))
     }
 
     /// Builds a custom [`Stalker`] implementation using a provided constructor function.
-    pub fn build_with<T, F>(self, f: F) -> Arc<T>
+    pub fn build_with<T, FF>(mut self, f: FF) -> Arc<T>
     where
         T: Stalker + Send + Sync + 'static,
-        F: FnOnce(Arc<Scanner>) -> T,
+        FF: FnOnce(Arc<Scanner<F>>) -> T,
     {
+        self.state = Arc::new(Mutex::new(ScannerState::Initialized));
         Arc::new(f(Arc::new(self)))
     }
 
@@ -289,15 +468,14 @@ impl Scanner {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-
     use tokio_stream::StreamExt;
 
     use super::*;
 
     #[test]
     fn test_build_scanner_default_and_custom_options() {
-        let scanner = Scanner::new();
-        let scanner_custom = Scanner::new().with_options(
+        let scanner = Scanner::<JsonFormatter>::new();
+        let scanner_custom = Scanner::<JsonFormatter>::new().with_options(
             ScannerOptions {
                 batch_size: 100,
                 timeout_ms: 2_000,
@@ -314,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_scanner_add_task() {
-        let scanner = Scanner::new().build();
+        let scanner = Scanner::<RawFormatter>::new().build();
 
         scanner.add_task(
             vec![Actions::PortIsOpen, Actions::ServiceOnPort],
@@ -330,7 +508,7 @@ mod tests {
 
     #[test]
     fn test_scanner_add_multiple_tasks() {
-        let scanner = Scanner::new().build();
+        let scanner = Scanner::<StructuredFormatter>::new().build();
 
         let l = vec![
             Task::new(
@@ -354,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_scanner_logger_stream() {
-        let scanner = Scanner::new().build();
+        let scanner = Scanner::<JsonFormatter>::new().build();
 
         let l = vec![
             Task::new(
@@ -372,17 +550,20 @@ mod tests {
         ];
 
         scanner.add_multiple_tasks(l);
-        //TODO:finish logs stream
-        //let logs = scanner.get_logs_stream().await;
+
+        assert_eq!(scanner.total_tasks(), 3);
 
         let mut logs = scanner.get_logs_stream().await;
 
         scanner.execute_tasks().await;
 
         while let Some(log) = logs.next().await {
-            println!("Log: {:?}", String::from_utf8_lossy(&log.unwrap()));
+            match log {
+                Ok(log) => println!("Log: {:?}", log),
+                Err(_) => break,
+            }
         }
 
-        assert_eq!(scanner.total_tasks(), 3);
+        assert_eq!(scanner.total_tasks(), 0);
     }
 }

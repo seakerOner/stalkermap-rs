@@ -240,5 +240,8 @@ pub mod dns;
 
 pub mod utils;
 
-#[cfg(feature = "tokio-dep")]
-pub mod scanner;
+cfg_if::cfg_if! {
+    if #[cfg(any(feature = "tokio-dep", doc))] {
+        pub mod scanner;
+    }
+}
