@@ -83,18 +83,22 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
     sync::{Arc, Mutex, atomic::AtomicBool},
+    time::Duration,
 };
 //use tokio::sync::Mutex;
 use crate::utils::UrlParser;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::{
+    net::TcpStream,
     sync::{
         Semaphore,
         broadcast::{self},
     },
-    //net::TcpStream,
+    time::{Timeout, timeout},
 };
+pub mod formatter;
+pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
 
 /// Trait defining the core scanning operations.
 ///
@@ -137,16 +141,6 @@ pub trait Stalker: Send + Sync + 'static {
 /// Thread-safe queue of pending tasks.
 type TaskPool = Arc<Mutex<VecDeque<Task>>>;
 
-/// Trait for formatting scan results.
-///
-/// A `LogFormatter` defines how raw scan results and action outcomes
-/// are converted into a structured output type.
-pub trait LogFormatter: Send + Sync + 'static {
-    type Output: Send + Sync + 'static + Clone + Debug;
-
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output;
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogRecord {
     pub header_response: LogHeader,
@@ -156,62 +150,6 @@ pub struct LogRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogHeader {
     pub actions_results: HashMap<Actions, String>,
-}
-
-/// Formats scan results as raw bytes.
-pub struct RawFormatter;
-/// Formats scan results as structured Rust types (`LogRecord`).
-pub struct StructuredFormatter;
-/// Formats scan results as JSON strings.
-pub struct JsonFormatter;
-
-impl LogFormatter for RawFormatter {
-    type Output = Vec<u8>;
-
-    fn format(&self, _actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
-        raw_data.to_vec()
-    }
-}
-
-impl Default for RawFormatter {
-    fn default() -> Self {
-        Self
-    }
-}
-
-impl LogFormatter for StructuredFormatter {
-    type Output = LogRecord;
-
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
-        LogRecord {
-            header_response: LogHeader { actions_results },
-            data: String::from_utf8_lossy(raw_data).into_owned(),
-        }
-    }
-}
-
-impl Default for StructuredFormatter {
-    fn default() -> Self {
-        Self
-    }
-}
-
-impl LogFormatter for JsonFormatter {
-    type Output = String;
-
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
-        serde_json::to_string(&LogRecord {
-            header_response: LogHeader { actions_results },
-            data: String::from_utf8_lossy(raw_data).into_owned(),
-        })
-        .unwrap()
-    }
-}
-
-impl Default for JsonFormatter {
-    fn default() -> Self {
-        Self
-    }
 }
 
 /// Represents a single scanning job.
@@ -345,7 +283,7 @@ where
     async fn execute_tasks(&self) {
         *self.0.state.lock().unwrap() = ScannerState::Running;
         let batch_size = Arc::new(Semaphore::new(self.0.options.batch_size));
-        let _timeout_t = self.0.options.timeout_ms;
+        let timeout_t = self.0.options.timeout_ms;
         let logger_tx = self.0.logger_tx.clone();
 
         loop {
@@ -362,19 +300,34 @@ where
                     }
                 };
 
-                let _actions: HashSet<Actions> = task.todo.into_iter().collect();
-                let _target = task.target;
-                let logs = logger_tx.clone();
+                let actions: HashSet<Actions> = task.todo.into_iter().collect();
+                let logs_tx = logger_tx.clone();
                 let log_format = self.0.logger_format.clone();
+
+                let target = task.target;
+                let addr = format!(
+                    "{}://{}{}",
+                    target.scheme,
+                    target.target,
+                    match target.port {
+                        0 => String::new(),
+                        n => format!(":{}", n),
+                    }
+                );
 
                 tokio::task::spawn(async move {
                     let raw_data: &[u8; 11] = b"hello world";
 
+                    let con = timeout(Duration::from_millis(timeout_t), TcpStream::connect(addr))
+                        .await
+                        .unwrap()
+                        .unwrap();
+
                     let actions_results: HashMap<Actions, String> = HashMap::new();
                     let log = log_format.format(actions_results, raw_data);
 
-                    if let Some(logs) = &*logs.lock().unwrap() {
-                        let _ = logs.send(log);
+                    if let Some(logs_tx) = &*logs_tx.lock().unwrap() {
+                        let _ = logs_tx.send(log);
                     }
 
                     drop(permit);
