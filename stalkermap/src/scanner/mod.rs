@@ -86,7 +86,6 @@ use std::{
     time::Duration,
 };
 //use tokio::sync::Mutex;
-use crate::utils::UrlParser;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -99,6 +98,11 @@ use tokio::{
 };
 pub mod formatter;
 pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
+pub mod buffer_pool;
+use crate::{
+    scanner::buffer_pool::{Buffer, BufferExt, BufferPool},
+    utils::UrlParser,
+};
 
 /// Trait defining the core scanning operations.
 ///
@@ -228,6 +232,8 @@ where
     pub options: ScannerOptions,
     /// Shared queue of pending tasks.
     pub task_pool: TaskPool,
+
+    buffer_pool: Arc<BufferPool>,
     /// Broadcast channel for log events.
     pub logger_tx: Arc<Mutex<Option<broadcast::Sender<<F as LogFormatter>::Output>>>>,
     /// Formatter used to serialize log events.
@@ -241,8 +247,6 @@ where
 pub enum Actions {
     /// Check if a single port is open.
     PortIsOpen,
-    /// Check if all ports are open.
-    CheckAllPortsAreOpen,
     /// Identify the service running on a specific port.
     ServiceOnPort,
     /// Determine the version of a service running on a port.
@@ -315,21 +319,43 @@ where
                     }
                 );
 
-                tokio::task::spawn(async move {
-                    let raw_data: &[u8; 11] = b"hello world";
+                let buffer_pool = self.0.buffer_pool.clone();
 
-                    let con = timeout(Duration::from_millis(timeout_t), TcpStream::connect(addr))
-                        .await
-                        .unwrap()
-                        .unwrap();
+                tokio::task::spawn(async move {
+                    let mut buf = buffer_pool.get();
+
+                    let stream =
+                        timeout(Duration::from_millis(timeout_t), TcpStream::connect(addr))
+                            .await
+                            .unwrap()
+                            .unwrap();
+
+                    let len = if let Ok(_) = stream.readable().await {
+                        match stream.try_read(buf.as_bytes_mut()) {
+                            Ok(v) => v,
+                            Err(_) => 0,
+                        }
+                    } else {
+                        0
+                    };
+
+                    // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
+                    // and `len` is guaranteed to be <= buffer size. In case of any read error or
+                    // failure, `len` is set to 0, ensuring no uninitialized memory is ever read.
+                    // Therefore, the slice created here only covers initialized memory.
+                    let raw_data = unsafe { buf.as_bytes(len) };
 
                     let actions_results: HashMap<Actions, String> = HashMap::new();
+
+                    // TODO: Set Action Results
+
                     let log = log_format.format(actions_results, raw_data);
 
                     if let Some(logs_tx) = &*logs_tx.lock().unwrap() {
                         let _ = logs_tx.send(log);
                     }
 
+                    buffer_pool.put(buf as Buffer);
                     drop(permit);
                 });
             }
@@ -383,6 +409,7 @@ where
             state: Arc::new(Mutex::new(ScannerState::Uninitialized)),
             options: ScannerOptions::default(),
             task_pool: Arc::new(Mutex::new(VecDeque::new())),
+            buffer_pool: Arc::new(BufferPool::new()),
             logger_tx: Arc::new(Mutex::new(Some(sender))),
             logger_format: Arc::new(F::default()),
         }
@@ -443,8 +470,8 @@ mod tests {
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         );
         scanner.add_task(
-            vec![Actions::CheckAllPortsAreOpen, Actions::ServiceOnPort],
-            UrlParser::from_str("https://127.0.0.1:80").unwrap(),
+            vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+            UrlParser::from_str("https://127.0.0.1:120").unwrap(),
         );
 
         assert_eq!(scanner.total_tasks(), 2);
@@ -460,8 +487,8 @@ mod tests {
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::CheckAllPortsAreOpen, Actions::ServiceOnPort],
-                UrlParser::from_str("https://127.0.0.1:80").unwrap(),
+                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                UrlParser::from_str("https://127.0.0.1:20").unwrap(),
             ),
             Task::new(
                 vec![Actions::PortIsOpen, Actions::ServiceOnPort],
@@ -484,7 +511,7 @@ mod tests {
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::CheckAllPortsAreOpen, Actions::ServiceOnPort],
+                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
