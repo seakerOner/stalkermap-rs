@@ -7,3 +7,4 @@ publish = false
 [dependencies]
 tokio = { version = "1.47.1", features = ["full"]}
 stalkermap = { path = "../stalkermap", features = ["tokio-dep"]}
+tokio-stream = { version = "0.1.17", features = ["sync"] }

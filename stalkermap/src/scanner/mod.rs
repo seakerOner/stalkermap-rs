@@ -57,15 +57,20 @@
 //!         "127.0.0.1:80".parse().unwrap(),
 //!     );
 //!
-//!     scanner.execute_tasks().await;
+//!     let mut stream = scanner.get_logs_stream().await.unwrap();
 //!
-//!     let mut stream = scanner.get_logs_stream().await;
-//!     while let Some(log) = stream.next().await {
-//!         match log {
-//!             Ok(log) => println!("{:?}", log),
-//!             Err(_) => break
+//!     scanner.execute_tasks();
+//!
+//!     tokio::spawn(async move {
+//!         while let Some(log) = stream.next().await {
+//!             match log {
+//!                 Ok(log) => println!("{:?}", log),
+//!                 Err(_) => break
+//!             }
 //!         }
-//!     }
+//!     });
+//!
+//!     scanner.shutdown_now().await;
 //! }
 //! ```
 //!
@@ -79,23 +84,29 @@
 //!
 //! The engine is designed for composability and safety —
 //! all concurrency is explicit, and shutdowns are cooperative.
+use async_trait::async_trait;
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::Debug,
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
-//use tokio::sync::Mutex;
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use tokio::{
     net::TcpStream,
     sync::{
-        Semaphore,
+        Notify, Semaphore,
         broadcast::{self},
     },
-    time::{Timeout, timeout},
+    task::{JoinSet, yield_now},
+    time::timeout,
 };
+use tokio_util::sync::CancellationToken;
+
 pub mod formatter;
 pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
 pub mod buffer_pool;
@@ -124,22 +135,24 @@ pub trait Stalker: Send + Sync + 'static {
 
     /// Returns the total number of pending tasks.
     fn total_tasks(&self) -> usize;
+    fn total_tasks_on_queue(&self) -> usize;
 
     /// Executes all tasks currently in the queue asynchronously.
     ///
     /// Tasks are executed concurrently up to the `batch_size` limit.
     /// Each task runs at most once, and log events are streamed via the configured formatter.
-    async fn execute_tasks(&self);
+    fn execute_tasks(&self);
 
     /// Returns a stream of log events produced during task execution.
     async fn get_logs_stream(
         &self,
-    ) -> tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>;
+    ) -> Option<tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>>;
 
     /// Signals the scanner to shut down and release resources.
     ///
     /// All running tasks will continue until completion, but no new tasks will be accepted.
-    fn shutdown(&self);
+    async fn shutdown_graceful(&self);
+    async fn await_idle(&self);
 }
 
 /// Thread-safe queue of pending tasks.
@@ -165,18 +178,12 @@ pub struct Task {
     todo: Vec<Actions>,
     /// The target (host, URL, IP, etc.) to be scanned.
     target: UrlParser,
-    /// Flag indicating if the task has been queued.
-    queued: AtomicBool,
 }
 
 impl Task {
     /// Creates a new task for the given `target` with the specified `actions`.
     pub fn new(todo: Vec<Actions>, target: UrlParser) -> Self {
-        Self {
-            todo,
-            target,
-            queued: AtomicBool::new(false),
-        }
+        Self { todo, target }
     }
 }
 
@@ -195,8 +202,8 @@ pub struct ScannerOptions {
 impl Default for ScannerOptions {
     fn default() -> Self {
         Self {
-            batch_size: 64,
-            timeout_ms: 3_000,
+            batch_size: 100,
+            timeout_ms: 500,
         }
     }
 }
@@ -226,18 +233,29 @@ pub struct Scanner<F>
 where
     F: LogFormatter,
 {
-    /// Current runtime state.
-    pub state: Arc<Mutex<ScannerState>>,
     /// Configuration options controlling runtime behavior.
     pub options: ScannerOptions,
     /// Shared queue of pending tasks.
-    pub task_pool: TaskPool,
-
+    task_pool: TaskPool,
+    pending_tasks: Arc<AtomicUsize>,
+    active_tasks: Arc<AtomicUsize>,
+    task_notify: Arc<Notify>,
     buffer_pool: Arc<BufferPool>,
     /// Broadcast channel for log events.
-    pub logger_tx: Arc<Mutex<Option<broadcast::Sender<<F as LogFormatter>::Output>>>>,
+    logger_tx: Arc<Mutex<Option<broadcast::Sender<<F as LogFormatter>::Output>>>>,
     /// Formatter used to serialize log events.
     pub logger_format: Arc<F>,
+    cancellation_token: Arc<CancellationToken>,
+}
+
+struct ActiveTasksGuard {
+    active_tasks: Arc<AtomicUsize>,
+}
+
+impl Drop for ActiveTasksGuard {
+    fn drop(&mut self) {
+        self.active_tasks.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Enumerates the possible scanning operations.
@@ -247,12 +265,12 @@ where
 pub enum Actions {
     /// Check if a single port is open.
     PortIsOpen,
-    /// Identify the service running on a specific port.
+    /// Check status code on connection. (NOT IMPLEMENTED)
+    StatusCode,
+    /// Identify the service running on a specific port. (NOT IMPLEMENTED)
     ServiceOnPort,
-    /// Determine the version of a service running on a port.
+    /// Determine the version of a service running on a port. (NOT IMPLEMENTED)
     ServicePortVersion,
-    /// Fallback strategy for failed scans or unknown states.
-    FallBack,
 }
 
 /// Internal concrete implementation of [`Stalker`].
@@ -271,128 +289,210 @@ where
     type F = F;
 
     fn add_task(&self, task: Vec<Actions>, target: UrlParser) {
-        let mut pool = self.0.task_pool.lock().unwrap();
+        self.0.pending_tasks.fetch_add(1, Ordering::SeqCst);
+        let mut pool = { self.0.task_pool.lock() };
 
-        pool.push_back(Task {
-            todo: task,
-            target,
-            queued: AtomicBool::new(false),
-        });
+        pool.push_back(Task { todo: task, target });
+        self.0.task_notify.notify_one();
     }
 
     fn total_tasks(&self) -> usize {
-        self.0.task_pool.lock().unwrap().len()
+        self.0.task_pool.lock().len()
     }
 
-    async fn execute_tasks(&self) {
-        *self.0.state.lock().unwrap() = ScannerState::Running;
+    fn total_tasks_on_queue(&self) -> usize {
+        self.0.pending_tasks.load(Ordering::SeqCst) + self.0.active_tasks.load(Ordering::SeqCst)
+    }
+    fn execute_tasks(&self) {
         let batch_size = Arc::new(Semaphore::new(self.0.options.batch_size));
-        let timeout_t = self.0.options.timeout_ms;
-        let logger_tx = self.0.logger_tx.clone();
+        let scanner = self.0.clone();
 
-        loop {
-            let task = { self.0.task_pool.lock().unwrap().pop_front() };
-            let Some(task) = task else {
-                break;
-            };
+        tokio::task::spawn(async move {
+            let mut set = JoinSet::new();
 
-            if !task.queued.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                let permit = match batch_size.clone().acquire_owned().await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        break;
-                    }
-                };
+            loop {
+                let timeout_t = scanner.options.timeout_ms;
 
-                let actions: HashSet<Actions> = task.todo.into_iter().collect();
-                let logs_tx = logger_tx.clone();
-                let log_format = self.0.logger_format.clone();
+                let maybe_task = { scanner.task_pool.lock().pop_front() };
 
-                let target = task.target;
-                let addr = format!(
-                    "{}://{}{}",
-                    target.scheme,
-                    target.target,
-                    match target.port {
-                        0 => String::new(),
-                        n => format!(":{}", n),
-                    }
-                );
+                if maybe_task.is_none()
+                    && scanner.active_tasks.load(Ordering::SeqCst) == 0
+                    && scanner.pending_tasks.load(Ordering::SeqCst) == 0
+                {
+                    break;
+                }
 
-                let buffer_pool = self.0.buffer_pool.clone();
-
-                tokio::task::spawn(async move {
-                    let mut buf = buffer_pool.get();
-
-                    let stream =
-                        timeout(Duration::from_millis(timeout_t), TcpStream::connect(addr))
-                            .await
-                            .unwrap()
-                            .unwrap();
-
-                    let len = if let Ok(_) = stream.readable().await {
-                        match stream.try_read(buf.as_bytes_mut()) {
-                            Ok(v) => v,
-                            Err(_) => 0,
+                if let Some(task) = maybe_task {
+                    let permit = match batch_size.clone().acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => {
+                            break;
                         }
-                    } else {
-                        0
                     };
 
-                    // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
-                    // and `len` is guaranteed to be <= buffer size. In case of any read error or
-                    // failure, `len` is set to 0, ensuring no uninitialized memory is ever read.
-                    // Therefore, the slice created here only covers initialized memory.
-                    let raw_data = unsafe { buf.as_bytes(len) };
+                    let actions: HashSet<Actions> = task.todo.into_iter().collect();
+                    let logs_tx = scanner.logger_tx.clone();
+                    let log_format = scanner.logger_format.clone();
 
-                    let actions_results: HashMap<Actions, String> = HashMap::new();
+                    let target = task.target;
+                    let addr = format!(
+                        "{}:{}",
+                        target.target,
+                        if target.port == 0 { 80 } else { target.port }
+                    );
 
-                    // TODO: Set Action Results
+                    let buffer_pool = scanner.buffer_pool.clone();
+                    let cancel_token = scanner.cancellation_token.clone();
 
-                    let log = log_format.format(actions_results, raw_data);
+                    let active_tasks = scanner.active_tasks.clone();
+                    let pending_tasks = scanner.pending_tasks.clone();
+                    active_tasks.fetch_add(1, Ordering::SeqCst);
+                    pending_tasks.fetch_sub(1, Ordering::SeqCst);
 
-                    if let Some(logs_tx) = &*logs_tx.lock().unwrap() {
-                        let _ = logs_tx.send(log);
-                    }
+                    set.spawn(async move {
+                        let _guard = ActiveTasksGuard {
+                            active_tasks: active_tasks,
+                        };
 
-                    buffer_pool.put(buf as Buffer);
-                    drop(permit);
-                });
+                        if cancel_token.is_cancelled() {
+                            return;
+                        }
+                        let mut buf = buffer_pool.get();
+                        let mut actions_results: HashMap<Actions, String> = HashMap::new();
+
+                        let stream = match timeout(
+                            Duration::from_millis(timeout_t),
+                            TcpStream::connect(addr),
+                        )
+                        .await
+                        {
+                            Ok(Ok(s)) => s,
+                            Ok(Err(e)) => {
+                                actions_results.insert(Actions::PortIsOpen, "closed".to_string());
+                                let msg = (format!("connection error: {}", e)).into_bytes();
+                                let log = log_format.format(actions_results, &msg);
+
+                                if let Some(logs_tx) = logs_tx.lock().as_ref() {
+                                    logs_tx.send(log).ok();
+                                }
+
+                                buffer_pool.put(buf as Buffer);
+                                drop(permit);
+                                return;
+                            }
+                            Err(e) => {
+                                actions_results.insert(Actions::PortIsOpen, "timeout".to_string());
+                                let msg = (format!("connection timed out: {}", e)).into_bytes();
+                                let log = log_format.format(actions_results, &msg);
+
+                                if let Some(logs_tx) = logs_tx.lock().as_ref() {
+                                    logs_tx.send(log).ok();
+                                }
+
+                                buffer_pool.put(buf as Buffer);
+                                drop(permit);
+                                return;
+                            }
+                        };
+
+                        // let len = if let Ok(_) = stream.readable().await {
+                        //     match stream.try_read(buf.as_bytes_mut()) {
+                        //         Ok(v) => v,
+                        //         Err(_) => 0,
+                        //     }
+                        // } else {
+                        //     0
+                        // };
+                        let len = 0;
+
+                        // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
+                        // and `len` is guaranteed to be <= buffer size. In case of any read error or
+                        // failure, `len` is set to 0, ensuring no uninitialized memory is ever read.
+                        // Therefore, the slice created here only covers initialized memory.
+                        let raw_data = unsafe { buf.as_bytes(len) };
+
+                        // Set Action Results
+                        actions.iter().for_each(|a| match a {
+                            Actions::PortIsOpen => {
+                                if len > 0 {
+                                    actions_results.insert(Actions::PortIsOpen, "open".to_string());
+                                } else {
+                                    actions_results
+                                        .insert(Actions::PortIsOpen, "closed".to_string());
+                                }
+                            }
+                            Actions::StatusCode => {}
+                            Actions::ServiceOnPort => {}
+                            Actions::ServicePortVersion => {}
+                        });
+
+                        let log = log_format.format(actions_results, &raw_data);
+
+                        if let Some(logs_tx) = logs_tx.lock().as_ref() {
+                            logs_tx.send(log).ok();
+                        }
+
+                        buffer_pool.put(buf as Buffer);
+                        drop(permit);
+                    });
+                } else {
+                    println!("execute_tasks yielded");
+                    println!("active: {}", scanner.active_tasks.load(Ordering::SeqCst));
+                    println!("pending: {}", scanner.pending_tasks.load(Ordering::SeqCst));
+
+                    yield_now().await;
+                }
             }
-        }
-
-        self.shutdown();
+        });
     }
 
     fn add_multiple_tasks(&self, tasks: Vec<Task>) {
-        let mut pool = self.0.task_pool.lock().unwrap();
-
+        self.0
+            .pending_tasks
+            .fetch_add(*&tasks.len(), Ordering::SeqCst);
+        let mut pool = { self.0.task_pool.lock() };
         tasks.into_iter().for_each(|t| pool.push_back(t));
+        self.0.task_notify.notify_waiters();
     }
 
     async fn get_logs_stream(
         &self,
-    ) -> tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output> {
+    ) -> Option<tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>> {
         use tokio_stream::wrappers::BroadcastStream;
 
-        BroadcastStream::new(
-            self.0
-                .logger_tx
-                .lock()
-                .unwrap()
-                .as_ref()
-                .unwrap()
-                .subscribe(),
-        )
+        if let Some(logs_tx) = self.0.logger_tx.lock().as_ref() {
+            Some(BroadcastStream::new(logs_tx.subscribe()))
+        } else {
+            None
+        }
     }
 
-    fn shutdown(&self) {
-        *self.0.state.lock().unwrap() = ScannerState::ShuttingDown;
-
-        if let Some(sender) = self.0.logger_tx.lock().unwrap().take() {
-            drop(sender);
+    async fn await_idle(&self) {
+        loop {
+            let active = self.0.active_tasks.load(Ordering::SeqCst);
+            let pending = self.0.pending_tasks.load(Ordering::SeqCst);
+            println!("pending: {}, active: {}", pending, active);
+            if pending == 0 && active == 0 {
+                break;
+            }
         }
-        *self.0.state.lock().unwrap() = ScannerState::Stopped;
+    }
+
+    async fn shutdown_graceful(&self) {
+        //self.0.cancellation_token.cancel();
+
+        loop {
+            let pending = self.0.pending_tasks.load(Ordering::SeqCst);
+            let active = self.0.active_tasks.load(Ordering::SeqCst);
+            println!("[GRACEFUL] pending: {}, active: {}", pending, active);
+            if pending == 0 && active == 0 {
+                break;
+            }
+        }
+
+        if let Some(logs_tx) = self.0.logger_tx.lock().take() {
+            drop(logs_tx);
+        }
     }
 }
 
@@ -406,30 +506,31 @@ where
         let (sender, _) = broadcast::channel::<F::Output>(1024);
 
         Self {
-            state: Arc::new(Mutex::new(ScannerState::Uninitialized)),
             options: ScannerOptions::default(),
             task_pool: Arc::new(Mutex::new(VecDeque::new())),
+            pending_tasks: Arc::new(AtomicUsize::new(0)),
+            active_tasks: Arc::new(AtomicUsize::new(0)),
+            task_notify: Arc::new(Notify::new()),
             buffer_pool: Arc::new(BufferPool::new()),
             logger_tx: Arc::new(Mutex::new(Some(sender))),
             logger_format: Arc::new(F::default()),
+            cancellation_token: Arc::new(CancellationToken::new()),
         }
     }
 
     /// Builds a ready-to-use [`Stalker`] implementation using `BuiltScanner`.
     ///
     /// This returns an [`Arc<dyn Stalker>`] that can safely be shared across threads.
-    pub fn build(mut self) -> Arc<dyn Stalker<F = F> + Send + Sync + 'static> {
-        self.state = Arc::new(Mutex::new(ScannerState::Initialized));
+    pub fn build(self) -> Arc<dyn Stalker<F = F> + Send + Sync + 'static> {
         Arc::new(BuiltScanner(Arc::new(self)))
     }
 
     /// Builds a custom [`Stalker`] implementation using a provided constructor function.
-    pub fn build_with<T, FF>(mut self, f: FF) -> Arc<T>
+    pub fn build_with<T, FF>(self, f: FF) -> Arc<T>
     where
         T: Stalker + Send + Sync + 'static,
         FF: FnOnce(Arc<Scanner<F>>) -> T,
     {
-        self.state = Arc::new(Mutex::new(ScannerState::Initialized));
         Arc::new(f(Arc::new(self)))
     }
 
@@ -455,14 +556,14 @@ mod tests {
             timeout_ms: 2_000,
         });
 
-        assert_eq!(scanner.options.batch_size, 64);
-        assert_eq!(scanner.options.timeout_ms, 3_000);
+        assert_eq!(scanner.options.batch_size, 100);
+        assert_eq!(scanner.options.timeout_ms, 500);
         assert_eq!(scanner_custom.options.batch_size, 100);
         assert_eq!(scanner_custom.options.timeout_ms, 2_000);
     }
 
-    #[test]
-    fn test_scanner_add_task() {
+    #[tokio::test]
+    async fn test_scanner_add_task() {
         let scanner = Scanner::<RawFormatter>::new().build();
 
         scanner.add_task(
@@ -475,10 +576,11 @@ mod tests {
         );
 
         assert_eq!(scanner.total_tasks(), 2);
+        scanner.shutdown_graceful().await;
     }
 
-    #[test]
-    fn test_scanner_add_multiple_tasks() {
+    #[tokio::test]
+    async fn test_scanner_add_multiple_tasks() {
         let scanner = Scanner::<StructuredFormatter>::new().build();
 
         let l = vec![
@@ -499,6 +601,7 @@ mod tests {
         scanner.add_multiple_tasks(l);
 
         assert_eq!(scanner.total_tasks(), 3);
+        scanner.shutdown_graceful().await;
     }
 
     #[tokio::test]
@@ -507,15 +610,15 @@ mod tests {
 
         let l = vec![
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                vec![Actions::PortIsOpen],
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                vec![Actions::PortIsOpen],
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                vec![Actions::PortIsOpen],
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
         ];
@@ -524,17 +627,18 @@ mod tests {
 
         assert_eq!(scanner.total_tasks(), 3);
 
-        let mut logs = scanner.get_logs_stream().await;
+        let mut logs = scanner.get_logs_stream().await.unwrap();
 
-        scanner.execute_tasks().await;
+        scanner.execute_tasks();
 
-        while let Some(log) = logs.next().await {
-            match log {
-                Ok(log) => println!("Log: {:?}", log),
-                Err(_) => break,
+        tokio::spawn(async move {
+            while let Some(Ok(log)) = logs.next().await {
+                println!("Log: {:?}", log);
             }
-        }
+        });
 
-        assert_eq!(scanner.total_tasks(), 0);
+        scanner.shutdown_graceful().await;
+
+        assert_eq!(scanner.total_tasks_on_queue(), 0);
     }
 }

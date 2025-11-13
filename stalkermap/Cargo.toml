@@ -12,16 +12,18 @@ categories = ["network-programming", "command-line-utilities", "development-tool
 [dependencies]
 async-trait = { version = "0.1.89", optional = true }
 cfg-if = "1.0.3"
+parking_lot = { version = "0.12.5", optional = true }
 rand = { version = "0.9.2", features = ["small_rng"] }
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 serde_json = { version = "1.0.145", optional = true }
 tokio = { version = "1.47.1", optional = true, features = ["net", "time", "rt-multi-thread", "macros"]}
 tokio-stream = { version = "0.1.17", features = ["sync"], optional = true }
+tokio-util = { version = "0.7.17", optional = true}
 
 [features]
 default = []
 std = []
-tokio-dep = ["tokio", "tokio-stream", "async-trait", "serde", "serde_json"]
+tokio-dep = ["tokio", "tokio-stream", "async-trait", "serde", "serde_json", "tokio-util", "parking_lot"]
 agnostic = []
 
 [package.metadata.docs.rs]

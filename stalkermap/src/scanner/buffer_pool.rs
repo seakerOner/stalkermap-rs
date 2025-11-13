@@ -34,7 +34,7 @@ impl BufferPool {
             .lock()
             .unwrap()
             .pop()
-            .unwrap_or_else(|| Box::new(unsafe { MaybeUninit::uninit().assume_init() }) as Buffer)
+            .unwrap_or_else(|| Box::new([MaybeUninit::<u8>::uninit(); 512]) as Buffer)
     }
 
     pub(super) fn put(&self, buf: Buffer) {
