@@ -8,6 +8,8 @@ pub trait LogFormatter: Send + Sync + 'static {
     type Output: Send + Sync + 'static + Clone + Debug;
 
     fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output;
+
+    fn idle_output(&self) -> Self::Output;
 }
 
 /// Formats scan results as raw bytes.
@@ -22,6 +24,10 @@ impl LogFormatter for RawFormatter {
 
     fn format(&self, _actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
         raw_data.to_vec()
+    }
+
+    fn idle_output(&self) -> Self::Output {
+        b"___IDLE___".to_vec()
     }
 }
 
@@ -38,6 +44,15 @@ impl LogFormatter for StructuredFormatter {
         LogRecord {
             header_response: LogHeader { actions_results },
             data: String::from_utf8_lossy(raw_data).into_owned(),
+        }
+    }
+
+    fn idle_output(&self) -> Self::Output {
+        LogRecord {
+            header_response: LogHeader {
+                actions_results: HashMap::new(),
+            },
+            data: "idle".to_string(),
         }
     }
 }
@@ -57,6 +72,10 @@ impl LogFormatter for JsonFormatter {
             data: String::from_utf8_lossy(raw_data).into_owned(),
         })
         .unwrap()
+    }
+
+    fn idle_output(&self) -> Self::Output {
+        serde_json::json!({"type": "idle"}).to_string()
     }
 }
 

@@ -105,6 +105,7 @@ use tokio::{
     task::{JoinSet, yield_now},
     time::timeout,
 };
+use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 use tokio_util::sync::CancellationToken;
 
 pub mod formatter;
@@ -144,9 +145,7 @@ pub trait Stalker: Send + Sync + 'static {
     fn execute_tasks(&self);
 
     /// Returns a stream of log events produced during task execution.
-    async fn get_logs_stream(
-        &self,
-    ) -> Option<tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>>;
+    async fn get_logs_stream(&self) -> Option<TaskAwareStream<<Self::F as LogFormatter>::Output>>;
 
     /// Signals the scanner to shut down and release resources.
     ///
@@ -158,13 +157,19 @@ pub trait Stalker: Send + Sync + 'static {
 /// Thread-safe queue of pending tasks.
 type TaskPool = Arc<Mutex<VecDeque<Task>>>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogRecord {
     pub header_response: LogHeader,
     pub data: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+impl LogRecord {
+    pub fn is_idle_signal<F: LogFormatter<Output = Self>>(&self, fmt: &F) -> bool {
+        self == &fmt.idle_output()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogHeader {
     pub actions_results: HashMap<Actions, String>,
 }
@@ -184,6 +189,34 @@ impl Task {
     /// Creates a new task for the given `target` with the specified `actions`.
     pub fn new(todo: Vec<Actions>, target: UrlParser) -> Self {
         Self { todo, target }
+    }
+}
+
+pub struct TaskAwareStream<T> {
+    inner: BroadcastStream<T>,
+    notify: Arc<Notify>,
+}
+
+impl<T: Clone + Send + Sync + 'static> TaskAwareStream<T> {
+    pub fn new(rx: broadcast::Receiver<T>, notify: Arc<Notify>) -> Self {
+        Self {
+            inner: BroadcastStream::new(rx),
+            notify,
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<T> {
+        while let Some(msg) = self.inner.next().await {
+            match msg {
+                Ok(val) => return Some(val),
+                Err(_) => continue,
+            }
+        }
+        None
+    }
+
+    pub async fn notify_when_new_tasks(&self) {
+        self.notify.notified().await;
     }
 }
 
@@ -239,22 +272,28 @@ where
     task_pool: TaskPool,
     pending_tasks: Arc<AtomicUsize>,
     active_tasks: Arc<AtomicUsize>,
-    task_notify: Arc<Notify>,
     buffer_pool: Arc<BufferPool>,
     /// Broadcast channel for log events.
     logger_tx: Arc<Mutex<Option<broadcast::Sender<<F as LogFormatter>::Output>>>>,
     /// Formatter used to serialize log events.
     pub logger_format: Arc<F>,
     cancellation_token: Arc<CancellationToken>,
+    idle_notify: Arc<Notify>,
 }
 
 struct ActiveTasksGuard {
     active_tasks: Arc<AtomicUsize>,
+    pending_tasks: Arc<AtomicUsize>,
+    idle_notify: Arc<Notify>,
 }
 
 impl Drop for ActiveTasksGuard {
     fn drop(&mut self) {
-        self.active_tasks.fetch_sub(1, Ordering::SeqCst);
+        if self.active_tasks.fetch_sub(1, Ordering::SeqCst) == 1
+            && self.pending_tasks.load(Ordering::SeqCst) == 0
+        {
+            self.idle_notify.notify_waiters();
+        }
     }
 }
 
@@ -293,7 +332,7 @@ where
         let mut pool = { self.0.task_pool.lock() };
 
         pool.push_back(Task { todo: task, target });
-        self.0.task_notify.notify_one();
+        self.0.idle_notify.notify_waiters();
     }
 
     fn total_tasks(&self) -> usize {
@@ -303,6 +342,7 @@ where
     fn total_tasks_on_queue(&self) -> usize {
         self.0.pending_tasks.load(Ordering::SeqCst) + self.0.active_tasks.load(Ordering::SeqCst)
     }
+
     fn execute_tasks(&self) {
         let batch_size = Arc::new(Semaphore::new(self.0.options.batch_size));
         let scanner = self.0.clone();
@@ -314,13 +354,6 @@ where
                 let timeout_t = scanner.options.timeout_ms;
 
                 let maybe_task = { scanner.task_pool.lock().pop_front() };
-
-                if maybe_task.is_none()
-                    && scanner.active_tasks.load(Ordering::SeqCst) == 0
-                    && scanner.pending_tasks.load(Ordering::SeqCst) == 0
-                {
-                    break;
-                }
 
                 if let Some(task) = maybe_task {
                     let permit = match batch_size.clone().acquire_owned().await {
@@ -346,12 +379,16 @@ where
 
                     let active_tasks = scanner.active_tasks.clone();
                     let pending_tasks = scanner.pending_tasks.clone();
+                    let idle_notify = scanner.idle_notify.clone();
+
                     active_tasks.fetch_add(1, Ordering::SeqCst);
                     pending_tasks.fetch_sub(1, Ordering::SeqCst);
 
                     set.spawn(async move {
                         let _guard = ActiveTasksGuard {
                             active_tasks: active_tasks,
+                            pending_tasks: pending_tasks,
+                            idle_notify: idle_notify,
                         };
 
                         if cancel_token.is_cancelled() {
@@ -436,10 +473,6 @@ where
                         drop(permit);
                     });
                 } else {
-                    println!("execute_tasks yielded");
-                    println!("active: {}", scanner.active_tasks.load(Ordering::SeqCst));
-                    println!("pending: {}", scanner.pending_tasks.load(Ordering::SeqCst));
-
                     yield_now().await;
                 }
             }
@@ -447,21 +480,20 @@ where
     }
 
     fn add_multiple_tasks(&self, tasks: Vec<Task>) {
-        self.0
-            .pending_tasks
-            .fetch_add(*&tasks.len(), Ordering::SeqCst);
+        self.0.idle_notify.notify_waiters();
         let mut pool = { self.0.task_pool.lock() };
-        tasks.into_iter().for_each(|t| pool.push_back(t));
-        self.0.task_notify.notify_waiters();
+        tasks.into_iter().for_each(|t| {
+            self.0.pending_tasks.fetch_add(1, Ordering::SeqCst);
+            pool.push_back(t)
+        });
     }
 
-    async fn get_logs_stream(
-        &self,
-    ) -> Option<tokio_stream::wrappers::BroadcastStream<<Self::F as LogFormatter>::Output>> {
-        use tokio_stream::wrappers::BroadcastStream;
-
+    async fn get_logs_stream(&self) -> Option<TaskAwareStream<<Self::F as LogFormatter>::Output>> {
         if let Some(logs_tx) = self.0.logger_tx.lock().as_ref() {
-            Some(BroadcastStream::new(logs_tx.subscribe()))
+            Some(TaskAwareStream::new(
+                logs_tx.subscribe(),
+                self.0.idle_notify.clone(),
+            ))
         } else {
             None
         }
@@ -471,8 +503,13 @@ where
         loop {
             let active = self.0.active_tasks.load(Ordering::SeqCst);
             let pending = self.0.pending_tasks.load(Ordering::SeqCst);
-            println!("pending: {}, active: {}", pending, active);
+
             if pending == 0 && active == 0 {
+                let event = self.0.logger_format.idle_output();
+
+                if let Some(logs_tx) = self.0.logger_tx.lock().as_ref() {
+                    logs_tx.send(event).ok();
+                }
                 break;
             }
         }
@@ -484,7 +521,6 @@ where
         loop {
             let pending = self.0.pending_tasks.load(Ordering::SeqCst);
             let active = self.0.active_tasks.load(Ordering::SeqCst);
-            println!("[GRACEFUL] pending: {}, active: {}", pending, active);
             if pending == 0 && active == 0 {
                 break;
             }
@@ -510,11 +546,11 @@ where
             task_pool: Arc::new(Mutex::new(VecDeque::new())),
             pending_tasks: Arc::new(AtomicUsize::new(0)),
             active_tasks: Arc::new(AtomicUsize::new(0)),
-            task_notify: Arc::new(Notify::new()),
             buffer_pool: Arc::new(BufferPool::new()),
             logger_tx: Arc::new(Mutex::new(Some(sender))),
             logger_format: Arc::new(F::default()),
             cancellation_token: Arc::new(CancellationToken::new()),
+            idle_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -544,7 +580,6 @@ where
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-    use tokio_stream::StreamExt;
 
     use super::*;
 
@@ -632,7 +667,7 @@ mod tests {
         scanner.execute_tasks();
 
         tokio::spawn(async move {
-            while let Some(Ok(log)) = logs.next().await {
+            while let Some(log) = logs.next().await {
                 println!("Log: {:?}", log);
             }
         });

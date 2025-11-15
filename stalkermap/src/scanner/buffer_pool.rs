@@ -1,5 +1,5 @@
+use parking_lot::Mutex;
 use std::mem::MaybeUninit;
-use std::sync::Mutex;
 
 pub(super) type Buffer = Box<[MaybeUninit<u8>; 512]>;
 
@@ -32,12 +32,11 @@ impl BufferPool {
     pub(super) fn get(&self) -> Buffer {
         self.pool
             .lock()
-            .unwrap()
             .pop()
             .unwrap_or_else(|| Box::new([MaybeUninit::<u8>::uninit(); 512]) as Buffer)
     }
 
     pub(super) fn put(&self, buf: Buffer) {
-        self.pool.lock().unwrap().push(buf);
+        self.pool.lock().push(buf);
     }
 }
