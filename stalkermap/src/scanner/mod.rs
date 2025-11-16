@@ -125,7 +125,7 @@
 //!
 //! This is achieved with:
 //!
-//! - `log.is_idle_signal(&Formatter)`  
+//! - `Formatter.is_idle_signal(&log)`  
 //! - `logs.notify_when_new_tasks().await`  
 //!
 //! The second method (`notify_when_new_tasks`) attaches a `Notify` behind the
@@ -139,7 +139,7 @@
 //!
 //! `shutdown_graceful()` ensures that:
 //!
-//! - **no new tasks** will be accepted  
+//! - **no new tasks** will be accepted when `pending_tasks` + `active_tasks` = `0`
 //! - **all already-running tasks** are allowed to finish  
 //! - the log channel is closed only after the last task completes  
 //!
