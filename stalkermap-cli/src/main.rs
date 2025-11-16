@@ -39,7 +39,7 @@ async fn main() {
         "------------------------------------------------------------------------------------",
     );
 
-    let scanner = Scanner::<StructuredFormatter>::new().build();
+    let scanner = Scanner::<RawFormatter>::new().build();
     let mut logs = scanner.get_logs_stream().await.unwrap();
 
     scanner.add_multiple_tasks(vec![
@@ -76,10 +76,11 @@ async fn main() {
         loop {
             match logs.next().await {
                 Some(log) => {
-                    if log.is_idle_signal(&StructuredFormatter) {
+                    if RawFormatter.is_idle_signal(&log) {
                         logs.notify_when_new_tasks().await;
+                    } else {
+                        println!("Log: {:#?}", log);
                     }
-                    println!("Log: {:#?}", log);
                 }
                 None => {
                     break;
@@ -87,12 +88,11 @@ async fn main() {
             }
         }
     });
-
-    //scanner.await_idle().await;
-
     scanner.execute_tasks();
+
+    scanner.await_idle().await;
+
     scanner.add_multiple_tasks(l);
-    //scanner.execute_tasks();
 
     scanner.shutdown_graceful().await;
 }

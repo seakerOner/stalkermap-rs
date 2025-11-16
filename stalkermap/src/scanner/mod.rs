@@ -1,89 +1,262 @@
 //! # Scanner Engine
 //!
-//! This module implements a **concurrent scanning engine** built on top of a lightweight asynchronous task queue.
+//! This module implements a **concurrent asynchronous scanning engine**
+//! designed for I/O-bound workloads such as:
+//! - network probing
+//! - port scanning
+//! - service enumeration
+//! - protocol fingerprinting
 //!
-//! It exposes the [`Stalker`] trait for defining scanning operations,
-//! and the [`Scanner`] struct, which manages task scheduling, configuration, and logging.
+//! The engine is built around three pillars:
 //!
-//! It serves as a *task orchestrator* for I/O-bound workloads such as network scanning,
-//! port probing, or service enumeration.
+//! - [`Stalker`]: the high-level async API for issuing tasks and controlling the scanner  
+//! - [`Scanner`]: the underlying shared state, task queue, and log channel  
+//! - a pluggable [`LogFormatter`] for customizable output formats  
 //!
-//! Internally, it leverages asynchronous execution and a pluggable [`LogFormatter`] to support
-//! flexible output formats (raw bytes, structured data, JSON, etc.).
+//! It provides a **lightweight task scheduler** with bounded concurrency,
+//! streaming logs via a `tokio::broadcast` channel, and cooperative idle/shutdown
+//! behavior.
+//!
+//! ---
 //!
 //! ## Architecture Overview
 //!
-//! The core architecture separates the scanning logic from orchestration and I/O formatting layers:
+//! The scanner is composed of modular layers:
 //!
 //! ```text
-//! +-----------------------------+
-//! |        User Code            |
-//! |   (interacts via Stalker)   |
-//! +-------------+---------------+
-//!               |
-//!               v
-//! +-----------------------------+
-//! |       BuiltScanner          |
-//! |  (implements Stalker)       |
-//! +-------------+---------------+
-//!               |
-//!               v
-//! +-----------------------------+
-//! |          Scanner            |
-//! | (state, queue, formatter)   |
-//! +-----------------------------+
+//! +------------------------------------------------------+
+//! |                     User Code                        |
+//! |         (adds tasks, consumes logs, awaits idle)     |
+//! +------------------------------+-----------------------+
+//!                                |
+//!                                v
+//! +------------------------------------------------------+
+//! |                     Stalker API                      |
+//! |   - add_task, add_multiple_tasks                     |
+//! |   - execute_tasks                                    |
+//! |   - get_logs_stream                                  |
+//! |   - await_idle, shutdown_graceful                    |
+//! +------------------------------+-----------------------+
+//!                                |
+//!                                v
+//! +------------------------------------------------------+
+//! |                  BuiltScanner (runtime)              |
+//! |   Implements async scheduling and task execution     |
+//! +------------------------------+-----------------------+
+//!                                |
+//!                                v
+//! +------------------------------------------------------+
+//! |                    Scanner (state)                   |
+//! | - task queue        - log broadcast sender           |
+//! | - buffer pool       - formatter                      |
+//! | - counters          - Notify (idle)                  |
+//! +------------------------------------------------------+
 //! ```
 //!
-//! ## Key Components
+//! The **Scanner** owns all shared state.  
+//! **BuiltScanner** implements the logic.  
+//! Users interact exclusively through the **Stalker** trait.
 //!
-//! - [`Scanner`]: Holds configuration, task queue, and log channel; does not execute tasks directly.
-//! - [`Task`]: Represents a single scanning job (actions + target), with a flag to avoid duplicate execution.
-//! - [`Actions`]: Defines what to perform (e.g., port checks, service detection).
-//! - [`LogFormatter`]: Controls how scan results are serialized or formatted.
+//! ---
 //!
-//! ## Example Usage
+//! ## Concurrency Model
+//!
+//! Task execution is cooperative and bounded:
+//!
+//! - tasks are executed concurrently and independently  
+//! - concurrency is limited by [`ScannerOptions::batch_size`]  
+//! - tasks use a shared `BufferPool` for fast zero-alloc reads  
+//! - log messages are broadcast to all subscribers  
+//! - the system supports:
+//!   - **real-time log streaming**
+//!   - **idle detection**
+//!   - **graceful shutdown**
+//!
+//! Idle events are emitted automatically via the formatter's  
+//! [`LogFormatter::idle_output`] value.
+//!
+//! ---
+//!
+//! ## Log Streaming
+//!
+//! Logs are published with a `tokio::broadcast` channel.
+//!
+//! `scanner.get_logs_stream()` returns a [`TaskAwareStream`], which is a wrapper
+//! around `BroadcastStream` that provides:
+//!
+//! - `.next()` — receive next log event  
+//! - `.notify_when_new_tasks()` — wait until new tasks are added  
+//!
+//! This allows writing event loops that pause when the scanner is idle and
+//! automatically resume when new tasks arrive.
+//!
+//! ---
+//!
+//! ## Idle Detection
+//!
+//! A scanner is considered **idle** when:
+//!
+//! ```text
+//! pending_tasks == 0  AND  active_tasks == 0
+//! ```
+//!
+//! This invariant is maintained by two atomic counters that are updated
+//! deterministically even in the presence of cancellation or panics.
+//!
+//! When the scanner becomes idle, two events occur:
+//!
+//! 1. `await_idle()` returns  
+//! 2. an **idle log event** is broadcast, using the formatter's
+//!    [`LogFormatter::idle_output`] value  
+//!
+//! This provides a predictable and race-free way for consumers to know that:
+//!
+//! - all work has completed  
+//! - the queue is empty  
+//! - no tasks are currently running  
+//!
+//! ### Why idle events exist
+//!
+//! Idle messages enable a powerful pattern:
+//!
+//! ```text
+//! read log → detect idle → pause yourself → wake when tasks are added
+//! ```
+//!
+//! This is achieved with:
+//!
+//! - `log.is_idle_signal(&Formatter)`  
+//! - `logs.notify_when_new_tasks().await`  
+//!
+//! The second method (`notify_when_new_tasks`) attaches a `Notify` behind the
+//! stream, allowing listeners to sleep until new tasks are pushed into the queue.
+//!
+//! This avoids busy-waiting and enables very efficient background log loops.
+//!
+//! ---
+//!
+//! ## Graceful Shutdown
+//!
+//! `shutdown_graceful()` ensures that:
+//!
+//! - **no new tasks** will be accepted  
+//! - **all already-running tasks** are allowed to finish  
+//! - the log channel is closed only after the last task completes  
+//!
+//! The shutdown procedure waits for the same invariants used for idle detection:
+//!
+//! ```text
+//! pending_tasks == 0
+//! active_tasks == 0
+//! ```
+//!
+//! Only after both conditions hold does the scanner:
+//!
+//! - drop the broadcast sender  
+//! - unblock all remaining log stream consumers  
+//! - allow the scanner to be reclaimed by the runtime  
+//!
+//! ### Why it works
+//!
+//! Because active task tracking is implemented with an RAII guard
+//! (`ActiveTasksGuard`), the counters are always correct:
+//! - incremented before a task begins  
+//! - decremented automatically when a task ends  
+//!
+//! No future or asynchronous path can forget to decrement the counter,
+//! even if a task returns early or fails.
+//!
+//! This makes shutdown and idle detection **fully deterministic**.
+//!
+//!
+//! ---
+//!
+//! ## Putting it together
+//!
+//! Using idle detection + new-task notification, you can build fully
+//! reactive systems:
+//!
+//! - log listeners that sleep when nothing is happening  
+//! - controllers that automatically enqueue new work  
+//! - UIs that reflect real-time activity  
+//! - scanners that continuously run until the user stops them  
+//!
+//! Both mechanisms operate efficiently without busy-wait polling,
+//! without creating extra channels per listener, and without requiring
+//! additional manual synchronization beyond the engine's built-in atomics and notification primitives/
+//!
+//!
+//! # Example: end-to-end usage
 //!
 //! ```rust,no_run
-//! use stalkermap::scanner::{Scanner, Stalker, Actions, JsonFormatter};
+//! use stalkermap::scanner::*;
+//! use stalkermap::utils::UrlParser;
 //! use tokio_stream::StreamExt;
 //! use std::str::FromStr;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let scanner = Scanner::<JsonFormatter>::new().build();
+//!     // Create a scanner with JSON-formatted logs
+//!     let scanner = Scanner::<StructuredFormatter>::new().build();
 //!
+//!     // Get the log stream
+//!     let mut logs = scanner.get_logs_stream().await.unwrap();
+//!
+//!     // Add initial task
 //!     scanner.add_task(
-//!         vec![Actions::PortIsOpen, Actions::ServiceOnPort],
-//!         "127.0.0.1:80".parse().unwrap(),
+//!         vec![Actions::PortIsOpen],
+//!         UrlParser::from_str("https://127.0.0.1:80").unwrap()
 //!     );
 //!
-//!     let mut stream = scanner.get_logs_stream().await.unwrap();
-//!
-//!     scanner.execute_tasks();
-//!
+//!     // Start consuming logs in the background
 //!     tokio::spawn(async move {
-//!         while let Some(log) = stream.next().await {
-//!             match log {
-//!                 Ok(log) => println!("{:?}", log),
-//!                 Err(_) => break
+//!         loop {
+//!             match logs.next().await {
+//!                 Some(record) => {
+//!                     println!("log event: {record:?}");
+//!
+//!                     // Pause until more tasks are added
+//!                     if StructuredFormatter.is_idle_signal(&record) {
+//!                         logs.notify_when_new_tasks().await;
+//!                     }
+//!                 }
+//!                 None => break
 //!             }
 //!         }
 //!     });
 //!
-//!     scanner.shutdown_now().await;
+//!     // Execute tasks
+//!     scanner.execute_tasks();
+//!
+//!     // Wait for scanner to become idle
+//!     scanner.await_idle().await;
+//!
+//!     // Add more tasks dynamically
+//!     scanner.add_multiple_tasks(vec![
+//!         Task::new(vec![Actions::PortIsOpen], UrlParser::from_str("https://127.0.0.1:443").unwrap())
+//!     ]);
+//!
+//!     // Shutdown gracefully
+//!     scanner.shutdown_graceful().await;
 //! }
 //! ```
 //!
+//! ---
+//!
 //! ## Design Notes
 //!
-//! - The engine ensures **thread-safe concurrency** for all shared components.
-//! - `batch_size` in [`ScannerOptions`] limits **concurrent task execution** via a semaphore.
-//! - Log output is **formatter-agnostic**, allowing custom implementations.
-//! - Shutdown behavior is cooperative — consumers should drop receivers
-//!   or invoke [`Stalker::shutdown`] when done.
+//! - Task execution is **at most once** — tasks are popped from the queue and never re-queued.  
+//! - Buffer re-use dramatically reduces allocations during high-volume scanning.  
+//! - Log formatting is fully user-defined via [`LogFormatter`].  
+//! - Shutdown is **cooperative**: running tasks are allowed to finish.  
+//! - `await_idle()` is deterministic and never races tasks due to internal counters.  
 //!
-//! The engine is designed for composability and safety —
-//! all concurrency is explicit, and shutdowns are cooperative.
+//! The design emphasizes:
+//!
+//! - clarity over magic  
+//! - explicit task management  
+//! - safety through atomics and Notify  
+//! - predictable async behavior under load  
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -102,7 +275,7 @@ use tokio::{
         Notify, Semaphore,
         broadcast::{self},
     },
-    task::{JoinSet, yield_now},
+    task::yield_now,
     time::timeout,
 };
 use tokio_stream::{StreamExt, wrappers::BroadcastStream};
@@ -110,20 +283,32 @@ use tokio_util::sync::CancellationToken;
 
 pub mod formatter;
 pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
-pub mod buffer_pool;
+mod buffer_pool;
 use crate::{
     scanner::buffer_pool::{Buffer, BufferExt, BufferPool},
     utils::UrlParser,
 };
 
-/// Trait defining the core scanning operations.
+/// High-level asynchronous interface for the scanning engine.
 ///
-/// The `Stalker` trait abstracts over a scanning engine, providing
-/// methods for adding tasks, executing them asynchronously,
-/// retrieving logs, and managing shutdown.
+/// A type implementing [`Stalker`] represents a fully operational scanner
+/// instance. It exposes the public API for:
+///
+/// - adding tasks
+/// - executing queued tasks
+/// - consuming the log stream
+/// - detecting idle states
+/// - performing graceful shutdown
+///
+/// Users never interact with the internal engine (`BuiltScanner`);  
+/// they only use a trait object returned from [`Scanner::build`].
 ///
 /// # Type Parameters
-/// - `F`: The `LogFormatter` used to format scan results.
+/// - `F`: The [`LogFormatter`] implementation used to serialize log events.
+///
+/// # Concurrency
+/// All methods are thread-safe and can be called from multiple tasks without
+/// additional synchronization.
 #[async_trait]
 pub trait Stalker: Send + Sync + 'static {
     type F: LogFormatter;
@@ -157,16 +342,22 @@ pub trait Stalker: Send + Sync + 'static {
 /// Thread-safe queue of pending tasks.
 type TaskPool = Arc<Mutex<VecDeque<Task>>>;
 
+/// Structured representation of a scanner log entry.
+///
+/// Produced by [`StructuredFormatter`] and [`JsonFormatter`], and emitted
+/// through the broadcast channel.
+///
+/// Contains:
+/// - `header_response`: map of action → result
+/// - `data`: raw or decoded bytes from the TCP probe
+///
+/// # Idle signal
+/// Log consumers can use [`is_idle_signal`](Self::is_idle_signal) to detect
+/// when the scanner becomes idle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogRecord {
     pub header_response: LogHeader,
     pub data: String,
-}
-
-impl LogRecord {
-    pub fn is_idle_signal<F: LogFormatter<Output = Self>>(&self, fmt: &F) -> bool {
-        self == &fmt.idle_output()
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -174,10 +365,22 @@ pub struct LogHeader {
     pub actions_results: HashMap<Actions, String>,
 }
 
-/// Represents a single scanning job.
+/// A unit of work to be executed by the scanning engine.
 ///
-/// A `Task` bundles the actions to perform on a target URL or host,
-/// and tracks whether it has been queued.
+/// A `Task` contains:
+/// - a list of [`Actions`] to execute
+/// - a [`UrlParser`] target (host, IP, port, scheme, etc.)
+///
+/// Tasks run **at most once**, are placed in a FIFO queue, and
+/// are consumed by [`execute_tasks`](Stalker::execute_tasks).
+///
+/// # Examples
+/// ```rust,ignore
+/// let task = Task::new(
+///     vec![Actions::PortIsOpen],
+///     UrlParser::from_str("https://127.0.0.1:443").unwrap(),
+/// );
+/// ```
 pub struct Task {
     /// Actions that define the workflow for this task.
     todo: Vec<Actions>,
@@ -192,6 +395,26 @@ impl Task {
     }
 }
 
+/// A log stream that is aware of scanner activity.
+///
+/// Returned by [`Stalker::get_logs_stream`], this stream wraps a
+/// `BroadcastStream` and also holds a `Notify` handle that wakes
+/// listeners when new tasks are added.
+///
+/// This enables an ergonomic pattern:
+///
+/// - process logs normally
+/// - detect idle via the formatter
+/// - wait until new tasks are added
+///
+/// # Methods
+/// - [`next`](Self::next): receive next log event
+/// - [`notify_when_new_tasks`](Self::notify_when_new_tasks): block until more tasks arrive
+///
+/// # Idle handling
+/// When the scanner emits `idle_output()` via the formatter, the listener
+/// can call `.notify_when_new_tasks()` to suspend its loop until more
+/// tasks are queued.
 pub struct TaskAwareStream<T> {
     inner: BroadcastStream<T>,
     notify: Arc<Notify>,
@@ -220,10 +443,21 @@ impl<T: Clone + Send + Sync + 'static> TaskAwareStream<T> {
     }
 }
 
-/// Configuration options for the scanning engine.
+/// Runtime configuration for the scanning engine.
 ///
-/// Controls runtime behavior such as batch processing size
-/// and network timeouts.
+/// Controls batching, timeouts and general operational constraints.
+///
+/// # Fields
+/// - `batch_size`: maximum number of tasks allowed to run simultaneously
+/// - `timeout_ms`: network timeout applied to connection attempts
+///
+/// # Defaults
+/// ```rust,ignore
+/// ScannerOptions {
+///     batch_size: 100,
+///     timeout_ms: 500,
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct ScannerOptions {
     /// Maximum number of tasks processed in a single batch.
@@ -241,26 +475,26 @@ impl Default for ScannerOptions {
     }
 }
 
-#[derive(Debug)]
-pub enum ScannerState {
-    Uninitialized,
-    Initialized,
-    Running,
-    ShuttingDown,
-    Stopped,
-}
-
-/// Core scanner structure.
+/// Core shared state for the scanning engine.
 ///
-/// The [`Scanner`] stores all shared data and configuration required for scanning:
-/// - state
-/// - the task queue,
-/// - logs,
-/// - pointer map,
-/// - and runtime options.
+/// This type does **not** execute tasks.  
+/// It stores all runtime components:
 ///
-/// It is **not** responsible for executing tasks directly;  
-/// that responsibility belongs to `BuiltScanner`, which implements [`Stalker`].
+/// - the task queue (`TaskPool`)
+/// - atomic counters for active/pending tasks
+/// - a shared `BufferPool` for zero-allocation reading
+/// - a broadcast logger (`logger_tx`)
+/// - the log formatter
+/// - the cancellation token
+/// - idle notification mechanisms
+///
+/// A user never constructs this directly.  
+/// Instead, call:
+///
+/// - [`Scanner::new`] to create a configured scanner
+/// - [`Scanner::build`] to obtain an [`Arc<dyn Stalker>`]
+///
+/// The resulting trait object is the actual engine.
 #[derive(Clone)]
 pub struct Scanner<F>
 where
@@ -281,6 +515,15 @@ where
     idle_notify: Arc<Notify>,
 }
 
+/// RAII guard for accurate active task counting.
+///
+/// When dropped, it decrements `active_tasks` and emits an idle notification
+/// if no active or pending tasks remain.
+///
+/// This ensures:
+/// - no race conditions
+/// - deterministic idle detection
+/// - correct behavior even under cancellation or panics
 struct ActiveTasksGuard {
     active_tasks: Arc<AtomicUsize>,
     pending_tasks: Arc<AtomicUsize>,
@@ -312,10 +555,17 @@ pub enum Actions {
     ServicePortVersion,
 }
 
-/// Internal concrete implementation of [`Stalker`].
+/// Internal runtime implementing the [`Stalker`] trait.
 ///
-/// Wraps a shared [`Scanner`] instance and provides runtime
-/// behavior for task execution, logging, and shutdown.
+/// This is the operational engine:
+/// - pops tasks from the queue
+/// - manages concurrency via a `Semaphore`
+/// - executes async network probes
+/// - sends formatted logs over `broadcast`
+/// - implements idle detection and graceful shutdown
+///
+/// Users should **never reference** this type directly.
+/// It is hidden behind `Arc<dyn Stalker>`.
 struct BuiltScanner<F>(Arc<Scanner<F>>)
 where
     F: LogFormatter;
@@ -348,7 +598,7 @@ where
         let scanner = self.0.clone();
 
         tokio::task::spawn(async move {
-            let mut set = JoinSet::new();
+            //let mut set = JoinSet::new();
 
             loop {
                 let timeout_t = scanner.options.timeout_ms;
@@ -384,7 +634,7 @@ where
                     active_tasks.fetch_add(1, Ordering::SeqCst);
                     pending_tasks.fetch_sub(1, Ordering::SeqCst);
 
-                    set.spawn(async move {
+                    tokio::task::spawn(async move {
                         let _guard = ActiveTasksGuard {
                             active_tasks: active_tasks,
                             pending_tasks: pending_tasks,
@@ -432,15 +682,11 @@ where
                             }
                         };
 
-                        // let len = if let Ok(_) = stream.readable().await {
-                        //     match stream.try_read(buf.as_bytes_mut()) {
-                        //         Ok(v) => v,
-                        //         Err(_) => 0,
-                        //     }
-                        // } else {
-                        //     0
-                        // };
-                        let len = 0;
+                        let len = match stream.try_read(buf.as_bytes_mut()) {
+                            Ok(n) => n,
+                            Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => 0,
+                            Err(_) => 0,
+                        };
 
                         // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
                         // and `len` is guaranteed to be <= buffer size. In case of any read error or
@@ -516,15 +762,8 @@ where
     }
 
     async fn shutdown_graceful(&self) {
-        //self.0.cancellation_token.cancel();
-
-        loop {
-            let pending = self.0.pending_tasks.load(Ordering::SeqCst);
-            let active = self.0.active_tasks.load(Ordering::SeqCst);
-            if pending == 0 && active == 0 {
-                break;
-            }
-        }
+        self.await_idle().await;
+        self.0.cancellation_token.cancel();
 
         if let Some(logs_tx) = self.0.logger_tx.lock().take() {
             drop(logs_tx);
@@ -579,9 +818,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::scanner::*;
+    use crate::utils::*;
     use std::str::FromStr;
-
-    use super::*;
 
     #[test]
     fn test_build_scanner_default_and_custom_options() {
@@ -611,7 +850,6 @@ mod tests {
         );
 
         assert_eq!(scanner.total_tasks(), 2);
-        scanner.shutdown_graceful().await;
     }
 
     #[tokio::test]
@@ -636,12 +874,12 @@ mod tests {
         scanner.add_multiple_tasks(l);
 
         assert_eq!(scanner.total_tasks(), 3);
-        scanner.shutdown_graceful().await;
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_scanner_logger_stream() {
-        let scanner = Scanner::<JsonFormatter>::new().build();
+        let scanner = Scanner::<StructuredFormatter>::new().build();
+        let mut logs = scanner.get_logs_stream().await.unwrap();
 
         let l = vec![
             Task::new(
@@ -662,15 +900,23 @@ mod tests {
 
         assert_eq!(scanner.total_tasks(), 3);
 
-        let mut logs = scanner.get_logs_stream().await.unwrap();
-
-        scanner.execute_tasks();
-
         tokio::spawn(async move {
-            while let Some(log) = logs.next().await {
-                println!("Log: {:?}", log);
+            loop {
+                match logs.next().await {
+                    Some(log) => {
+                        if StructuredFormatter.is_idle_signal(&log) {
+                            logs.notify_when_new_tasks().await;
+                        } else {
+                            println!("Log: {:#?}", log);
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                }
             }
         });
+        scanner.execute_tasks();
 
         scanner.shutdown_graceful().await;
 
