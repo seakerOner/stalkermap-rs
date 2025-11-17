@@ -22,6 +22,14 @@ A comprehensive Rust library for building CLI network scanner applications with 
 
 ("tokio-dep" feature)
 - **DNS Resolver** - Async DNS queries with support for multiple record types (A, MX, TXT, SOA, PTR, WKS, etc.)
+- **Asynchronous Scanner Engine** -
+     - concurrent TCP scanning
+     - modular per-connection Actions
+     - real-time log streaming
+     - bounded concurrency
+     - idle detection & graceful shutdown
+     - customizable log formatter
+     - customizable actions
 
 ("Agnostic" feature)
 - **DNS message structure** — With encoder helpers (RFC1035 compliant)  
@@ -29,7 +37,6 @@ A comprehensive Rust library for building CLI network scanner applications with 
 
 ### Planned Features
  
-- **Port Scanning** - Efficient port scanning with customizable options
 - **Directory Enumeration** - Web directory and file discovery
 - **Report Generation** - Export scan results to various formats
 
@@ -63,6 +70,51 @@ stalkermap = { version = "0.1.40", default-features = false, features = ["agnost
 ```
 
 ## Usage Examples
+
+ ### Scanner Engine (tokio-dep)
+
+ ```rust,no_run
+    use stalkermap::scanner::*;
+    use stalkermap::actions;
+    use stalkermap::utils::UrlParser;
+    use tokio_stream::StreamExt;
+
+    #[tokio::main]
+    async fn main() {
+        // Create the scanner (requires feature = "tokio-dep")
+        let scanner = Scanner::<StructuredFormatter>::new().build();
+
+        // Subscribe to log events
+        let mut logs = scanner.get_logs_stream().await.unwrap();
+
+        // Add a simple task using the built-in ActionIsPortOpen
+        scanner.add_task(
+            actions!(ActionIsPortOpen {}),
+            UrlParser::from_str("https://127.0.0.1:80").unwrap()
+        );
+
+    // Start executing tasks
+    scanner.execute_tasks();
+
+    // Consume logs in real-time
+    tokio::spawn(async move {
+        while let Some(event) = logs.next().await {
+            println!("{event:?}");
+
+            // Pause until new tasks arrive when scanner goes idle
+            if StructuredFormatter::is_idle_signal(&event) {
+                logs.notify_when_new_tasks().await;
+            }
+        }
+    });
+
+    // Wait until scanner finishes all tasks
+    scanner.await_idle().await;
+
+    // Graceful shutdown
+    scanner.shutdown_graceful().await;
+}
+```
 
 ### DNS Resolver Example (std)
 

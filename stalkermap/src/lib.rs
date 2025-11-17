@@ -20,6 +20,14 @@
 //!
 //! ("tokio-dep" feature)
 //! - **DNS Resolver** - Async DNS queries with support for multiple record types (A, MX, TXT, SOA, PTR, WKS, etc.)
+//! - **Asynchronous Scanner Engine** -
+//!     - concurrent TCP scanning
+//!     - modular per-connection Actions
+//!     - real-time log streaming
+//!     - bounded concurrency
+//!     - idle detection & graceful shutdown
+//!     - customizable log formatter
+//!     - customizable actions
 //!
 //! ("Agnostic" feature)
 //! - **DNS message structure** - With encoder helpers (RFC1035 compliant)
@@ -27,7 +35,6 @@
 //!
 //!  ### Planned Features
 //!
-//! - **Port Scanning** - Efficient port scanning with customizable options
 //! - **Directory Enumeration** - Web directory and file discovery
 //! - **Report Generation** - Export scan results to various formats
 //!
@@ -46,6 +53,7 @@
 //!   - Replaces blocking transport with `tokio::net` for async TCP/UDP.  
 //!   - Supports non-blocking behaviors inspired by RFCs (TCP fallback, EDNS, retries, etc.). (Planned)
 //!   - Can include opinionated helpers to accelerate scanner development.
+//!   - Scanner Engine
 //!
 //! ## Quick Start
 //!
@@ -59,6 +67,52 @@
 //! ```
 //!
 //! ## Usage Examples
+//!
+//! ### Scanner Engine (tokio-dep)
+//!
+//! ```rust,ignore
+//!    use stalkermap::scanner::*;
+//!    use stalkermap::actions;
+//!    use stalkermap::utils::UrlParser;
+//!    use tokio_stream::StreamExt;
+//!
+//!    #[tokio::main]
+//!    async fn main() {
+//!        // Create the scanner (requires feature = "tokio-dep")
+//!        let scanner = Scanner::<StructuredFormatter>::new().build();
+//!
+//!        // Subscribe to log events
+//!        let mut logs = scanner.get_logs_stream().await.unwrap();
+//!
+//!        // Add a simple task using the built-in ActionIsPortOpen
+//!        scanner.add_task(
+//!            actions!(ActionIsPortOpen {}),
+//!            UrlParser::from_str("https://127.0.0.1:80").unwrap()
+//!        );
+//!
+//!    // Start executing tasks
+//!    scanner.execute_tasks();
+//!
+//!    // Consume logs in real-time
+//!    tokio::spawn(async move {
+//!        while let Some(event) = logs.next().await {
+//!            println!("{event:?}");
+//!
+//!            // Pause until new tasks arrive when scanner goes idle
+//!            if StructuredFormatter::is_idle_signal(&event) {
+//!                logs.notify_when_new_tasks().await;
+//!            }
+//!        }
+//!    });
+//!
+//!    // Wait until scanner finishes all tasks
+//!    scanner.await_idle().await;
+//!
+//!    // Graceful shutdown
+//!    scanner.shutdown_graceful().await;
+//! }
+//!
+//! ```
 //!
 //! ### DNS Resolver Example (std)
 //!

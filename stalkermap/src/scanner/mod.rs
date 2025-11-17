@@ -960,10 +960,10 @@ mod tests {
             }
         });
         scanner.execute_tasks();
-
-        scanner.shutdown_graceful().await;
+        scanner.await_idle().await;
 
         assert_eq!(scanner.total_tasks_on_queue(), 0);
+        scanner.shutdown_graceful().await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -982,19 +982,26 @@ mod tests {
         );
         scanner.execute_tasks();
 
-        let mut found = false;
+        let found = Arc::new(Mutex::new(false));
 
-        while let Some(record) = logs.next().await {
-            if StructuredFormatter.is_idle_signal(&record) {
-                break;
+        let ref_f = found.clone();
+        let log_task = tokio::spawn(async move {
+            while let Some(record) = logs.next().await {
+                if StructuredFormatter.is_idle_signal(&record) {
+                    break;
+                }
+
+                if let Some(v) = record.header_response.actions_results.get("IsPortOpen") {
+                    assert_eq!(v.as_str(), "open");
+                    *ref_f.lock() = true;
+                }
             }
+        });
+        scanner.await_idle().await;
 
-            if let Some(v) = record.header_response.actions_results.get("IsPortOpen") {
-                assert_eq!(v, "open");
-                found = true;
-            }
-        }
+        log_task.await.unwrap();
 
-        assert!(found);
+        assert!(*found.lock());
+        scanner.shutdown_graceful().await;
     }
 }
