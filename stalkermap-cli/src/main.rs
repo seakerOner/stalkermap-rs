@@ -1,13 +1,14 @@
-use std::str::FromStr;
-
 //use stalkermap::utils::sanitize::{DesiredType, Sanitize};
 //use stalkermap::utils::terminal::Terminal;
 //use stalkermap::utils::url;
 //use stalkermap::dns::resolver::{resolve_cname, resolve_ipv4, resolve_ipv4_async, resolve_txt};
 //use stalkermap::utils::*;
 //use stalkermap::dns::resolver::{resolve_ipv4_async, resolve_txt_async};
+use stalkermap::actions;
+use stalkermap::scanner::actions::ActionIsPortOpen;
 use stalkermap::scanner::*;
 use stalkermap::utils::*;
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() {
@@ -39,35 +40,35 @@ async fn main() {
         "------------------------------------------------------------------------------------",
     );
 
-    let scanner = Scanner::<RawFormatter>::new().build();
+    let scanner = Scanner::<StructuredFormatter>::new().build();
     let mut logs = scanner.get_logs_stream().await.unwrap();
 
     scanner.add_multiple_tasks(vec![
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
     ]);
 
     let l = vec![
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
         Task::new(
-            vec![Actions::PortIsOpen],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         ),
     ];
@@ -76,7 +77,7 @@ async fn main() {
         loop {
             match logs.next().await {
                 Some(log) => {
-                    if RawFormatter.is_idle_signal(&log) {
+                    if StructuredFormatter.is_idle_signal(&log) {
                         logs.notify_when_new_tasks().await;
                     } else {
                         println!("Log: {:#?}", log);

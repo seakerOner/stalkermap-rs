@@ -78,7 +78,7 @@ use super::*;
 pub trait LogFormatter: Send + Sync + 'static {
     type Output: Send + Sync + 'static + Clone + Debug + PartialEq;
 
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output;
+    fn format(&self, actions_results: HashMap<String, String>, raw_data: &[u8]) -> Self::Output;
 
     fn idle_output(&self) -> Self::Output;
 
@@ -111,7 +111,7 @@ impl LogFormatter for RawFormatter {
     type Output = Vec<u8>;
 
     /// Formats action results and raw network data into the associated output type.
-    fn format(&self, _actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+    fn format(&self, _actions_results: HashMap<String, String>, raw_data: &[u8]) -> Self::Output {
         raw_data.to_vec()
     }
 
@@ -133,7 +133,7 @@ impl Default for RawFormatter {
 impl LogFormatter for StructuredFormatter {
     type Output = LogRecord;
 
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+    fn format(&self, actions_results: HashMap<String, String>, raw_data: &[u8]) -> Self::Output {
         LogRecord {
             header_response: LogHeader { actions_results },
             data: String::from_utf8_lossy(raw_data).into_owned(),
@@ -159,7 +159,7 @@ impl Default for StructuredFormatter {
 impl LogFormatter for JsonFormatter {
     type Output = String;
 
-    fn format(&self, actions_results: HashMap<Actions, String>, raw_data: &[u8]) -> Self::Output {
+    fn format(&self, actions_results: HashMap<String, String>, raw_data: &[u8]) -> Self::Output {
         serde_json::to_string(&LogRecord {
             header_response: LogHeader { actions_results },
             data: String::from_utf8_lossy(raw_data).into_owned(),

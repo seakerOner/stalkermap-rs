@@ -204,7 +204,7 @@
 //!
 //!     // Add initial task
 //!     scanner.add_task(
-//!         vec![Actions::PortIsOpen],
+//!         actions!(ActionIsPortOpen {}),
 //!         UrlParser::from_str("https://127.0.0.1:80").unwrap()
 //!     );
 //!
@@ -233,7 +233,7 @@
 //!
 //!     // Add more tasks dynamically
 //!     scanner.add_multiple_tasks(vec![
-//!         Task::new(vec![Actions::PortIsOpen], UrlParser::from_str("https://127.0.0.1:443").unwrap())
+//!         Task::new(actions!(ActionIsPortOpen {}) , UrlParser::from_str("https://127.0.0.1:443").unwrap())
 //!     ]);
 //!
 //!     // Shutdown gracefully
@@ -261,7 +261,7 @@ use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     fmt::Debug,
     sync::{
         Arc,
@@ -281,6 +281,8 @@ use tokio::{
 use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 use tokio_util::sync::CancellationToken;
 
+pub mod actions;
+pub use actions::{Action, ActionIsPortOpen};
 pub mod formatter;
 pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
 mod buffer_pool;
@@ -314,7 +316,7 @@ pub trait Stalker: Send + Sync + 'static {
     type F: LogFormatter;
 
     /// Adds a single task to the scanning queue.
-    fn add_task(&self, task: Vec<Actions>, target: UrlParser);
+    fn add_task(&self, task: Vec<Box<dyn Action>>, target: UrlParser);
 
     /// Adds multiple pre-built tasks to the scanning queue.
     fn add_multiple_tasks(&self, tasks: Vec<Task>);
@@ -362,7 +364,7 @@ pub struct LogRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogHeader {
-    pub actions_results: HashMap<Actions, String>,
+    pub actions_results: HashMap<String, String>,
 }
 
 /// A unit of work to be executed by the scanning engine.
@@ -383,14 +385,14 @@ pub struct LogHeader {
 /// ```
 pub struct Task {
     /// Actions that define the workflow for this task.
-    todo: Vec<Actions>,
+    todo: Vec<Box<dyn Action>>,
     /// The target (host, URL, IP, etc.) to be scanned.
     target: UrlParser,
 }
 
 impl Task {
     /// Creates a new task for the given `target` with the specified `actions`.
-    pub fn new(todo: Vec<Actions>, target: UrlParser) -> Self {
+    pub fn new(todo: Vec<Box<dyn Action>>, target: UrlParser) -> Self {
         Self { todo, target }
     }
 }
@@ -540,21 +542,6 @@ impl Drop for ActiveTasksGuard {
     }
 }
 
-/// Enumerates the possible scanning operations.
-///
-/// Each action defines a type of check or probe to perform on a target.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum Actions {
-    /// Check if a single port is open.
-    PortIsOpen,
-    /// Check status code on connection. (NOT IMPLEMENTED)
-    StatusCode,
-    /// Identify the service running on a specific port. (NOT IMPLEMENTED)
-    ServiceOnPort,
-    /// Determine the version of a service running on a port. (NOT IMPLEMENTED)
-    ServicePortVersion,
-}
-
 /// Internal runtime implementing the [`Stalker`] trait.
 ///
 /// This is the operational engine:
@@ -577,7 +564,7 @@ where
 {
     type F = F;
 
-    fn add_task(&self, task: Vec<Actions>, target: UrlParser) {
+    fn add_task(&self, task: Vec<Box<dyn Action>>, target: UrlParser) {
         self.0.pending_tasks.fetch_add(1, Ordering::SeqCst);
         let mut pool = { self.0.task_pool.lock() };
 
@@ -598,8 +585,6 @@ where
         let scanner = self.0.clone();
 
         tokio::task::spawn(async move {
-            //let mut set = JoinSet::new();
-
             loop {
                 let timeout_t = scanner.options.timeout_ms;
 
@@ -613,15 +598,17 @@ where
                         }
                     };
 
-                    let actions: HashSet<Actions> = task.todo.into_iter().collect();
                     let logs_tx = scanner.logger_tx.clone();
                     let log_format = scanner.logger_format.clone();
 
-                    let target = task.target;
                     let addr = format!(
                         "{}:{}",
-                        target.target,
-                        if target.port == 0 { 80 } else { target.port }
+                        task.target.target,
+                        if task.target.port == 0 {
+                            80
+                        } else {
+                            task.target.port
+                        }
                     );
 
                     let buffer_pool = scanner.buffer_pool.clone();
@@ -644,8 +631,8 @@ where
                         if cancel_token.is_cancelled() {
                             return;
                         }
+
                         let mut buf = buffer_pool.get();
-                        let mut actions_results: HashMap<Actions, String> = HashMap::new();
 
                         let stream = match timeout(
                             Duration::from_millis(timeout_t),
@@ -655,7 +642,11 @@ where
                         {
                             Ok(Ok(s)) => s,
                             Ok(Err(e)) => {
-                                actions_results.insert(Actions::PortIsOpen, "closed".to_string());
+                                let mut actions_results: HashMap<String, String> = HashMap::new();
+                                actions_results.insert(
+                                    ActionIsPortOpen {}.name().to_string(),
+                                    "closed".to_string(),
+                                );
                                 let msg = (format!("connection error: {}", e)).into_bytes();
                                 let log = log_format.format(actions_results, &msg);
 
@@ -668,7 +659,11 @@ where
                                 return;
                             }
                             Err(e) => {
-                                actions_results.insert(Actions::PortIsOpen, "timeout".to_string());
+                                let mut actions_results: HashMap<String, String> = HashMap::new();
+                                actions_results.insert(
+                                    ActionIsPortOpen {}.name().to_string(),
+                                    "timeout".to_string(),
+                                );
                                 let msg = (format!("connection timed out: {}", e)).into_bytes();
                                 let log = log_format.format(actions_results, &msg);
 
@@ -682,39 +677,45 @@ where
                             }
                         };
 
-                        let len = match stream.try_read(buf.as_bytes_mut()) {
-                            Ok(n) => n,
-                            Err(ref e) if e.kind() == tokio::io::ErrorKind::WouldBlock => 0,
-                            Err(_) => 0,
-                        };
+                        let mut actions_results: HashMap<String, String> = HashMap::new();
+                        let mut raw_data: &[u8] = &[];
+                        for a in &task.todo {
+                            match a.set_read_from_successfull_connection() {
+                                true => {
+                                    let len = match stream.try_read(buf.as_bytes_mut()) {
+                                        Ok(n) => n,
+                                        Err(ref e)
+                                            if e.kind() == tokio::io::ErrorKind::WouldBlock =>
+                                        {
+                                            0
+                                        }
+                                        Err(_) => 0,
+                                    };
 
-                        // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
-                        // and `len` is guaranteed to be <= buffer size. In case of any read error or
-                        // failure, `len` is set to 0, ensuring no uninitialized memory is ever read.
-                        // Therefore, the slice created here only covers initialized memory.
-                        let raw_data = unsafe { buf.as_bytes(len) };
+                                    // SAFETY: `try_read()` writes exactly `len` bytes into the provided buffer,
+                                    // and `len` is guaranteed to be <= buffer size. In case of any read error or
+                                    // failure, `len` is set to 0, ensuring no uninitialized memory is ever read.
+                                    // Therefore, the slice created here only covers initialized memory.
+                                    raw_data = unsafe { buf.as_bytes(len) };
 
-                        // Set Action Results
-                        actions.iter().for_each(|a| match a {
-                            Actions::PortIsOpen => {
-                                if len > 0 {
-                                    actions_results.insert(Actions::PortIsOpen, "open".to_string());
-                                } else {
-                                    actions_results
-                                        .insert(Actions::PortIsOpen, "closed".to_string());
+                                    // Set Action Results
+                                    a.execute_after_successfull_connection_and_read(
+                                        &len,
+                                        raw_data,
+                                        &mut actions_results,
+                                    );
+                                }
+                                false => {
+                                    a.execute_after_successfull_connection(&mut actions_results);
                                 }
                             }
-                            Actions::StatusCode => {}
-                            Actions::ServiceOnPort => {}
-                            Actions::ServicePortVersion => {}
-                        });
+                        }
 
                         let log = log_format.format(actions_results, &raw_data);
 
                         if let Some(logs_tx) = logs_tx.lock().as_ref() {
                             logs_tx.send(log).ok();
                         }
-
                         buffer_pool.put(buf as Buffer);
                         drop(permit);
                     });
@@ -818,6 +819,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::actions;
     use crate::scanner::*;
     use crate::utils::*;
     use std::str::FromStr;
@@ -841,11 +843,11 @@ mod tests {
         let scanner = Scanner::<RawFormatter>::new().build();
 
         scanner.add_task(
-            vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:80").unwrap(),
         );
         scanner.add_task(
-            vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+            actions!(ActionIsPortOpen {}),
             UrlParser::from_str("https://127.0.0.1:120").unwrap(),
         );
 
@@ -858,15 +860,15 @@ mod tests {
 
         let l = vec![
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:20").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen, Actions::ServiceOnPort],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
         ];
@@ -883,15 +885,15 @@ mod tests {
 
         let l = vec![
             Task::new(
-                vec![Actions::PortIsOpen],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
             Task::new(
-                vec![Actions::PortIsOpen],
+                actions!(ActionIsPortOpen {}),
                 UrlParser::from_str("https://127.0.0.1:80").unwrap(),
             ),
         ];
