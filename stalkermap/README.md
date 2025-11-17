@@ -64,9 +64,9 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-stalkermap = { version = "0.1.40", features = ["std"]}
-stalkermap = { version = "0.1.40", features = ["tokio-dep"]}
-stalkermap = { version = "0.1.40", default-features = false, features = ["agnostic"]}
+stalkermap = { version = "0.1.50", features = ["std"]}
+stalkermap = { version = "0.1.50", features = ["tokio-dep"]}
+stalkermap = { version = "0.1.50", default-features = false, features = ["agnostic"]}
 ```
 
 ## Usage Examples
@@ -242,8 +242,8 @@ fn main() {
 The library is designed with modularity and composability in mind:
 
 - **`utils`** - Core utilities for input handling and URL parsing
-- **`dns`** - DNS resolution and query utilities (planned)
-- **`scanner`** - Port scanning and network discovery (planned)
+- **`dns`** - DNS resolution and query utilities 
+- **`scanner`** - Port scanning and network discovery 
 - **`reporter`** - Report generation and export (planned)
 
 ## Supported URL Formats

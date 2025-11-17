@@ -5,10 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Planned
-- DNS queries and hostname resolution
-- Port scanning (TCP/UDP)
 - Directory enumeration for web applications
-- Report generation (JSON, XML, CSV)
+## [0.1.50] - 17-11-2025
+### Added
+
+- **"tokio-dep" feature**
+   - Added Dynamic Scanner Engine (See Scanner Docs for more info)
+
+
+## [0.1.31] 
+
+### Technical Notes
+- Small fixes on the documentation for crates.io :D
+
 
 ## [0.1.40] - 11-10-2025
 
