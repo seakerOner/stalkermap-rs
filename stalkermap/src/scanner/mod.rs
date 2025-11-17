@@ -965,4 +965,36 @@ mod tests {
 
         assert_eq!(scanner.total_tasks_on_queue(), 0);
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_action_is_port_open_open_port() {
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let scanner = Scanner::<StructuredFormatter>::new().build();
+        let mut logs = scanner.get_logs_stream().await.unwrap();
+
+        scanner.add_task(
+            actions!(ActionIsPortOpen {}),
+            UrlParser::new(format!("http://127.0.0.1:{}", port).as_str()).unwrap(),
+        );
+        scanner.execute_tasks();
+
+        let mut found = false;
+
+        while let Some(record) = logs.next().await {
+            if StructuredFormatter.is_idle_signal(&record) {
+                break;
+            }
+
+            if let Some(v) = record.header_response.actions_results.get("IsPortOpen") {
+                assert_eq!(v, "open");
+                found = true;
+            }
+        }
+
+        assert!(found);
+    }
 }
