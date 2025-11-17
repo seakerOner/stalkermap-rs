@@ -34,10 +34,13 @@ use std::collections::HashMap;
 /// Creates a `Vec<Box<dyn Action>>` from a list of action expressions.
 ///
 /// # Example
-/// ```
+/// ```rust,no_run
+/// use stalkermap::actions;
+/// use stalkermap::scanner::{ActionIsPortOpen, Action};
+///
 /// let actions = actions!(
 ///     ActionIsPortOpen {},
-///     MyCustomAction {},
+///     // MyCustomAction {},
 /// );
 /// ```
 #[macro_export]

@@ -13,7 +13,7 @@
 //! - [`Scanner`]: the underlying shared state, task queue, and log channel  
 //! - a pluggable [`LogFormatter`] for customizable output formats  
 //! - The engine is extensible through a modular **Action system**
-//! (see [`actions`]).
+//!   (see [`actions`]).
 //!
 //! Actions allow each task to define arbitrary per-connection logic,
 //! such as:
@@ -225,6 +225,7 @@
 //!
 //! ```rust,no_run
 //! use stalkermap::scanner::*;
+//! use stalkermap::actions;
 //! use stalkermap::utils::UrlParser;
 //! use tokio_stream::StreamExt;
 //! use std::str::FromStr;
@@ -664,9 +665,9 @@ where
 
                     tokio::task::spawn(async move {
                         let _guard = ActiveTasksGuard {
-                            active_tasks: active_tasks,
-                            pending_tasks: pending_tasks,
-                            idle_notify: idle_notify,
+                            active_tasks,
+                            pending_tasks,
+                            idle_notify,
                         };
 
                         if cancel_token.is_cancelled() {
@@ -761,7 +762,7 @@ where
                             }
                         }
 
-                        let log = log_format.format(actions_results, &raw_data);
+                        let log = log_format.format(actions_results, raw_data);
 
                         if let Some(logs_tx) = logs_tx.lock().as_ref() {
                             logs_tx.send(log).ok();
@@ -786,14 +787,11 @@ where
     }
 
     async fn get_logs_stream(&self) -> Option<TaskAwareStream<<Self::F as LogFormatter>::Output>> {
-        if let Some(logs_tx) = self.0.logger_tx.lock().as_ref() {
-            Some(TaskAwareStream::new(
-                logs_tx.subscribe(),
-                self.0.idle_notify.clone(),
-            ))
-        } else {
-            None
-        }
+        self.0
+            .logger_tx
+            .lock()
+            .as_ref()
+            .map(|logs_tx| TaskAwareStream::new(logs_tx.subscribe(), self.0.idle_notify.clone()))
     }
 
     async fn await_idle(&self) {
@@ -953,18 +951,11 @@ mod tests {
         assert_eq!(scanner.total_tasks(), 3);
 
         tokio::spawn(async move {
-            loop {
-                match logs.next().await {
-                    Some(log) => {
-                        if StructuredFormatter.is_idle_signal(&log) {
-                            logs.notify_when_new_tasks().await;
-                        } else {
-                            println!("Log: {:#?}", log);
-                        }
-                    }
-                    None => {
-                        break;
-                    }
+            while let Some(log) = logs.next().await {
+                if StructuredFormatter.is_idle_signal(&log) {
+                    logs.notify_when_new_tasks().await;
+                } else {
+                    println!("Log: {:#?}", log);
                 }
             }
         });
