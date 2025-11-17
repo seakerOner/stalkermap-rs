@@ -10,7 +10,7 @@
 //!
 //! Formatters also define an *idle output* via [`LogFormatter::idle_output`],
 //! which is used internally when the scanner enters an idle state (no tasks
-//! remaining). Users may check for this value via [`LogRecord::is_idle_signal`]
+//! remaining). Users may check for this value via [`LogFormatter::is_idle_signal`]
 //! or equivalent mechanisms.
 
 use super::*;

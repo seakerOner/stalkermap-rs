@@ -12,6 +12,20 @@
 //! - [`Stalker`]: the high-level async API for issuing tasks and controlling the scanner  
 //! - [`Scanner`]: the underlying shared state, task queue, and log channel  
 //! - a pluggable [`LogFormatter`] for customizable output formats  
+//! - The engine is extensible through a modular **Action system**
+//! (see [`actions`]).
+//!
+//! Actions allow each task to define arbitrary per-connection logic,
+//! such as:
+//! - port-state checking (e.g. [`ActionIsPortOpen`])
+//! - banner grabbing
+//! - protocol fingerprinting
+//! - TLS/service probing
+//! - completely custom user-defined behaviours
+//!
+//! Each task carries a list of Actions, and the scanner executes them
+//! automatically after establishing the TCP connection (and optionally
+//! after performing a socket read, depending on the action).
 //!
 //! It provides a **lightweight task scheduler** with bounded concurrency,
 //! streaming logs via a `tokio::broadcast` channel, and cooperative idle/shutdown
@@ -57,9 +71,16 @@
 //! **BuiltScanner** implements the logic.  
 //! Users interact exclusively through the **Stalker** trait.
 //!
+//! Each executed task invokes its associated [`Action`]'s,
+//! executed in order:
+//! - After a successful TCP connection
+//! - With optional non-blocking read depending on the action's configuration
+//!
+//! Action results are collected into a shared map and included in every log record.
+//!
 //! ---
 //!
-//! ## Concurrency Model
+//! ## Actions and Concurrency Model
 //!
 //! Task execution is cooperative and bounded:
 //!
@@ -74,6 +95,20 @@
 //!
 //! Idle events are emitted automatically via the formatter's  
 //! [`LogFormatter::idle_output`] value.
+//!
+//! All actions inside a task run **sequentially within that task**, but
+//! tasks themselves run concurrently up to the configured batch size.
+//!
+//! Each action receives a [`ScanContext`] containing:
+//! - the target host
+//! - the target port
+//! - the Tokio task ID handling the connection
+//!
+//! All actions share a mutable `actions_results: HashMap<String, String>`,
+//! allowing actions to:
+//! - contribute results
+//! - detect results from previous actions in the same task
+//! - build multi-step or dependent workflows
 //!
 //! ---
 //!
@@ -197,6 +232,7 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     // Create a scanner with JSON-formatted logs
+//!     // You can also set custom options on your `Scanner`
 //!     let scanner = Scanner::<StructuredFormatter>::new().build();
 //!
 //!     // Get the log stream
@@ -204,7 +240,7 @@
 //!
 //!     // Add initial task
 //!     scanner.add_task(
-//!         actions!(ActionIsPortOpen {}),
+//!         actions!(ActionIsPortOpen {}), // Add your custom actions here!
 //!         UrlParser::from_str("https://127.0.0.1:80").unwrap()
 //!     );
 //!
@@ -282,7 +318,7 @@ use tokio_stream::{StreamExt, wrappers::BroadcastStream};
 use tokio_util::sync::CancellationToken;
 
 pub mod actions;
-pub use actions::{Action, ActionIsPortOpen};
+pub use actions::{Action, ActionIsPortOpen, ScanContext};
 pub mod formatter;
 pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatter};
 mod buffer_pool;
@@ -321,8 +357,9 @@ pub trait Stalker: Send + Sync + 'static {
     /// Adds multiple pre-built tasks to the scanning queue.
     fn add_multiple_tasks(&self, tasks: Vec<Task>);
 
-    /// Returns the total number of pending tasks.
+    /// Returns the total number of tasks on the `TaskPool`.
     fn total_tasks(&self) -> usize;
+    /// Returns the total number of pending tasks.
     fn total_tasks_on_queue(&self) -> usize;
 
     /// Executes all tasks currently in the queue asynchronously.
@@ -338,6 +375,10 @@ pub trait Stalker: Send + Sync + 'static {
     ///
     /// All running tasks will continue until completion, but no new tasks will be accepted.
     async fn shutdown_graceful(&self);
+
+    /// Signals the scanner to idle.
+    ///
+    /// All running tasks will continue until completion, new tasks will be accepted.
     async fn await_idle(&self);
 }
 
@@ -354,7 +395,7 @@ type TaskPool = Arc<Mutex<VecDeque<Task>>>;
 /// - `data`: raw or decoded bytes from the TCP probe
 ///
 /// # Idle signal
-/// Log consumers can use [`is_idle_signal`](Self::is_idle_signal) to detect
+/// Log consumers can use [`is_idle_signal`](LogFormatter::is_idle_signal) to detect
 /// when the scanner becomes idle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LogRecord {
@@ -370,7 +411,7 @@ pub struct LogHeader {
 /// A unit of work to be executed by the scanning engine.
 ///
 /// A `Task` contains:
-/// - a list of [`Actions`] to execute
+/// - a list of `Actions` to execute
 /// - a [`UrlParser`] target (host, IP, port, scheme, etc.)
 ///
 /// Tasks run **at most once**, are placed in a FIFO queue, and
@@ -379,7 +420,7 @@ pub struct LogHeader {
 /// # Examples
 /// ```rust,ignore
 /// let task = Task::new(
-///     vec![Actions::PortIsOpen],
+///     actions!(ActionIsPortOpen {}),
 ///     UrlParser::from_str("https://127.0.0.1:443").unwrap(),
 /// );
 /// ```
@@ -677,6 +718,12 @@ where
                             }
                         };
 
+                        let ctx = ScanContext {
+                            target_addr: &task.target.target,
+                            port: task.target.port,
+                            task_id: tokio::task::id(),
+                        };
+
                         let mut actions_results: HashMap<String, String> = HashMap::new();
                         let mut raw_data: &[u8] = &[];
                         for a in &task.todo {
@@ -700,13 +747,16 @@ where
 
                                     // Set Action Results
                                     a.execute_after_successfull_connection_and_read(
-                                        &len,
+                                        &ctx,
                                         raw_data,
                                         &mut actions_results,
                                     );
                                 }
                                 false => {
-                                    a.execute_after_successfull_connection(&mut actions_results);
+                                    a.execute_after_successfull_connection(
+                                        &ctx,
+                                        &mut actions_results,
+                                    );
                                 }
                             }
                         }
