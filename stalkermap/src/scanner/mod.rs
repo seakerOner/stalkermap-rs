@@ -325,7 +325,7 @@ pub use formatter::{JsonFormatter, LogFormatter, RawFormatter, StructuredFormatt
 mod buffer_pool;
 use crate::{
     scanner::buffer_pool::{Buffer, BufferExt, BufferPool},
-    utils::UrlParser,
+    utils::{TargetType, UrlParser},
 };
 
 /// High-level asynchronous interface for the scanning engine.
@@ -671,6 +671,11 @@ where
                         };
 
                         if cancel_token.is_cancelled() {
+                            return;
+                        }
+
+                        // For now the scanner wont resolve DNS names because of it's cacheless nature.
+                        if task.target.target_type == TargetType::Dns {
                             return;
                         }
 
