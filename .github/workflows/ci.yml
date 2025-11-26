@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Test Rust crate
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: ["std", "tokio-dep", "agnostic"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check --locked
+
+      - name: Clippy
+        run: cargo clippy --no-default-features --features "${{ matrix.feature }}" --all-targets -- -D warnings --locked
+
+      - name: Run tests
+        run: cargo test --no-default-features --features "${{ matrix.feature }}" --locked
+
+      - name: Run doc tests
+        run: cargo test --doc --no-default-features --features "${{ matrix.feature }}" --locked
+  nightly-docs:
+    name: Docs (nightly tokio-dep)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+
+      - name: Build crateio docs
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs"
+        run: cargo +nightly doc --features tokio-dep --no-deps --locked
+
