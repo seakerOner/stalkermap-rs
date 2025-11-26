@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Planned
 - Directory enumeration for web applications
+## [0.1.51] - 26-11-2025
+### Added
+
+- **"tokio-dep" feature**
+   - Hotfix making the scanner engine not execute tasks were the target given is a DNS type
+
 ## [0.1.50] - 17-11-2025
 ### Added
 

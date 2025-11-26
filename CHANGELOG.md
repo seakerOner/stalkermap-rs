@@ -10,6 +10,20 @@ All notable changes to this project will be documented in this file.
 - Directory enumeration for web applications
 - Report generation (JSON, XML, CSV)
 
+## [0.1.51] - 26-11-2025
+### Added
+
+- **"tokio-dep" feature**
+   - Hotfix making the scanner engine not execute tasks were the target given is a DNS type
+
+
+## [0.1.50] - 17-11-2025
+### Added
+
+- **"tokio-dep" feature**
+   - Added Dynamic Scanner Engine (See Scanner Docs for more info)
+
+
 ## [0.1.40] - 10-10-2025
 ### Added
 
