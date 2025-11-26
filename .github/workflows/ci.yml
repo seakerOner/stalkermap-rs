@@ -23,17 +23,24 @@ jobs:
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            stalkermap -> target
 
       - name: Check formatting
+        working-directory: ./stalkermap
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        working-directory: ./stalkermap
         run: cargo clippy --no-default-features --features "${{ matrix.feature }}" --all-targets -- -D warnings 
 
       - name: Run tests
+        working-directory: ./stalkermap
         run: cargo test --no-default-features --features "${{ matrix.feature }}"
 
       - name: Run doc tests
+        working-directory: ./stalkermap
         run: cargo test --doc --no-default-features --features "${{ matrix.feature }}" 
   nightly-docs:
     name: Docs (nightly tokio-dep)
@@ -47,6 +54,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Build crateio docs
+        working-directory: ./stalkermap
         env:
           RUSTDOCFLAGS: "--cfg docsrs"
         run: cargo +nightly doc --features tokio-dep --no-deps --locked
